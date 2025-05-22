@@ -13,28 +13,17 @@
 # limitations under the License.
 
 
-def GetGroupedTrivialOpNames():
-    return [
-        "pd_op.sin",
-        "pd_op.add",
-        "pd_op.relu",
-        "pd_op.data",
-        "pd_op.full",
-        "pd_op.cast",
-        "pd_op.exp",
-        "pd_op.relu",
-        "pd_op.tanh",
-        "pd_op.floor",
-        "pd_op.erf",
-        "pd_op.elementwise_pow",
-        "cinn_op.scale",
-        "pd_op.subtract",
-        "pd_op.add",
-        "pd_op.multiply",
-        "pd_op.divide",
-        "pd_op.maximum",
-        "cinn_op.yield_store",
-        "cinn_op.broadcast",
-        "pd_op.expand",
-        "cinn_op.generate_shape",
-    ]
+class CodeGenValue:
+    def __init__(self, pir_type, var_name):
+        self.pir_type = pir_type
+        self.var_name = var_name
+        self.const_value = None
+
+    def get_dtype(self):
+        def convert_to_dtype(pir_dtype, shape, data_layout):
+            return pir_dtype.convert_to_dtype()
+
+        return self.pir_type.match(t_dtensor=convert_to_dtype)
+
+    def is_dense_tensor_type(self):
+        return self.pir_type.get_type_name() == "t_dtensor"

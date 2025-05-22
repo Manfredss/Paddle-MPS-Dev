@@ -13,28 +13,7 @@
 # limitations under the License.
 
 
-def GetGroupedTrivialOpNames():
-    return [
-        "pd_op.sin",
-        "pd_op.add",
-        "pd_op.relu",
-        "pd_op.data",
-        "pd_op.full",
-        "pd_op.cast",
-        "pd_op.exp",
-        "pd_op.relu",
-        "pd_op.tanh",
-        "pd_op.floor",
-        "pd_op.erf",
-        "pd_op.elementwise_pow",
-        "cinn_op.scale",
-        "pd_op.subtract",
-        "pd_op.add",
-        "pd_op.multiply",
-        "pd_op.divide",
-        "pd_op.maximum",
-        "cinn_op.yield_store",
-        "cinn_op.broadcast",
-        "pd_op.expand",
-        "cinn_op.generate_shape",
-    ]
+class IndexCodeGenValue:
+    def __init__(self, iter_var_names):
+        self.iter_var_names = iter_var_names
+        self.const_data = None

@@ -13,28 +13,18 @@
 # limitations under the License.
 
 
-def GetGroupedTrivialOpNames():
-    return [
-        "pd_op.sin",
-        "pd_op.add",
-        "pd_op.relu",
-        "pd_op.data",
-        "pd_op.full",
-        "pd_op.cast",
-        "pd_op.exp",
-        "pd_op.relu",
-        "pd_op.tanh",
-        "pd_op.floor",
-        "pd_op.erf",
-        "pd_op.elementwise_pow",
-        "cinn_op.scale",
-        "pd_op.subtract",
-        "pd_op.add",
-        "pd_op.multiply",
-        "pd_op.divide",
-        "pd_op.maximum",
-        "cinn_op.yield_store",
-        "cinn_op.broadcast",
-        "pd_op.expand",
-        "cinn_op.generate_shape",
-    ]
+class KernelArgTranslator:
+    def __init__(self, param_struct_name):
+        self.param_struct_name = param_struct_name
+
+    def get_kernel_arg_name(self, var_name):
+        return var_name
+
+    def get_param_struct_field_name(self, var_name):
+        return var_name
+
+    def get_param_struct_init_name(self, var_name):
+        return f"{self.param_struct_name}.{var_name}"
+
+    def get_use_name(self, var_name):
+        return f"{self.param_struct_name}.{var_name}"
