@@ -2996,6 +2996,7 @@
   infer_meta :
     func : UnchangedInferMeta
     param : [label]
+    spmd_rule : LabelSmoothInferSpmd
   kernel :
     func : label_smooth
     data_type : label
