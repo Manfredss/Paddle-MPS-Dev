@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -82,3 +81,16 @@ def fused_stack_transpose_quant(
             return _C_ops.fused_stack_transpose_quant(x)
         else:
             return _C_ops.fused_stack_quant(x)
+
+
+def fused_transpose_split_quant(x, tokens_per_expert, pow_2_scales=False):
+
+    tokens_per_expert = [int(t) for t in tokens_per_expert]
+
+    if x.shape[0] == 0 or x.shape[1] == 0:
+        return [], []
+
+    if in_dynamic_or_pir_mode():
+        return _C_ops.fused_transpose_split_quant(
+            x, tokens_per_expert, pow_2_scales
+        )
