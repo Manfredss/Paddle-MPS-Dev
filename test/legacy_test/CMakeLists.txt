@@ -506,6 +506,22 @@ if(NOT WITH_GPU
     test_fused_transpose_spilt_quant_op)
 endif()
 
+set(has_arch_ge80 FALSE)
+foreach(arch ${NVCC_ARCH_BIN})
+  if(${arch} GREATER_EQUAL 80)
+    set(has_arch_ge80 TRUE)
+    break()
+  endif()
+endforeach()
+if(NOT WITH_GPU
+   OR WITH_GPU
+   AND NOT has_arch_ge80
+   OR WIN32
+   OR APPLE
+   OR WITH_ROCM)
+  list(REMOVE_ITEM TEST_OPS test_moe_permute_unpermute)
+endif()
+
 if(NOT WITH_CUDNN_FRONTEND)
   list(REMOVE_ITEM TEST_OPS test_fused_scale_bias_relu_conv_bn_op)
   list(REMOVE_ITEM TEST_OPS test_fused_scale_bias_add_relu_op)

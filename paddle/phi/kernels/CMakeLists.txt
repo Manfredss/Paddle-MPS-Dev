@@ -76,6 +76,24 @@ if(((WITH_GPU) AND (CUDA_VERSION VERSION_LESS 12.0))
     "fusion/gpu/fused_transpose_split_quant_kernel.cu")
 endif()
 
+# Get flag for CUDA arch >= 80
+set(has_arch_ge80 FALSE)
+foreach(arch ${NVCC_ARCH_BIN})
+  if(${arch} GREATER_EQUAL 80)
+    set(has_arch_ge80 TRUE)
+    break()
+  endif()
+endforeach()
+
+if(WITH_GPU
+   AND NOT has_arch_ge80
+   OR WIN32
+   OR APPLE
+   OR WITH_ROCM) # need support BF16
+  list(REMOVE_ITEM kernel_gpu "gpu/moe_permute_kernel.cu"
+       "gpu/moe_unpermute_kernel.cu")
+endif()
+
 if(NOT WITH_DGC)
   list(REMOVE_ITEM kernel_gpu "gpu/dgc_kernel.cu")
 endif()
