@@ -21,6 +21,7 @@ from .base import (  # noqa: F401
 from .basic import (  # noqa: F401
     CellVariable,
     ConstantVariable,
+    DataClassInstanceVariable,
     DataVariable,
     DygraphTracerVariable,
     EnumVariable,
@@ -45,6 +46,7 @@ from .callable import (  # noqa: F401
     CallableVariable,
     ClassVariable,
     ContainerLayerVariable,
+    DataClassVariable,
     FunctionVariable,
     LayerVariable,
     MethodVariable,
