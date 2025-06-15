@@ -75,7 +75,10 @@ if(NOT WITH_GPU)
   list(REMOVE_ITEM TEST_OPS test_fused_transpose_spilt_quant_op)
   list(REMOVE_ITEM TEST_OPS test_rms_norm_op)
   list(REMOVE_ITEM TEST_OPS test_fused_layernorm_op)
+  list(REMOVE_ITEM TEST_OPS test_fused_swiglu_weighted_bwd_op)
   list(REMOVE_ITEM TEST_OPS test_fused_comm_buffer)
+  list(REMOVE_ITEM TEST_OPS test_fused_weighted_swiglu_act_quant_op)
+  list(REMOVE_ITEM TEST_OPS test_fused_act_dequant_op)
   list(REMOVE_ITEM TEST_OPS test_fused_stack_transpose_quant_op)
   list(REMOVE_ITEM DIST_TEST_OPS "test_dist_hapi_model")
   list(REMOVE_ITEM DIST_TEST_OPS "test_dist_fleet_spmt")
@@ -161,6 +164,9 @@ if(WIN32)
   list(REMOVE_ITEM TEST_OPS test_masked_multihead_attention_op)
   list(REMOVE_ITEM TEST_OPS test_rms_norm_op)
   list(REMOVE_ITEM TEST_OPS test_fused_layernorm_op)
+  list(REMOVE_ITEM TEST_OPS test_fused_weighted_swiglu_act_quant_op)
+  list(REMOVE_ITEM TEST_OPS test_fused_swiglu_weighted_bwd_op)
+  list(REMOVE_ITEM TEST_OPS test_fused_act_dequant_op)
   list(REMOVE_ITEM TEST_OPS test_fused_stack_transpose_quant_op)
   list(REMOVE_ITEM TEST_OPS test_matmul_int8_op)
   list(REMOVE_ITEM TEST_OPS test_variable_length_memory_efficient_attention)
@@ -503,7 +509,11 @@ if(NOT WITH_GPU
     test_incubate_moe_gate_dispatch_partial_nosoftmaxtopk
     test_incubate_moe_gate_dispatch_w_permute_bwd
     test_incubate_moe_gate_dispatch_w_permute
-    test_fused_transpose_spilt_quant_op)
+    test_fused_act_dequant_op
+    test_fused_stack_transpose_quant_op
+    test_fused_swiglu_weighted_bwd_op
+    test_fused_transpose_spilt_quant_op
+    test_fused_weighted_swiglu_act_quant_op)
 endif()
 
 set(has_arch_ge80 FALSE)

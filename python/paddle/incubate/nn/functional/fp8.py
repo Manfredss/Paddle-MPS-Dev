@@ -83,6 +83,24 @@ def fused_stack_transpose_quant(
             return _C_ops.fused_stack_quant(x)
 
 
+def fused_act_dequant(
+    x: Tensor,
+    x_scale: Tensor,
+) -> Tensor:
+    if in_dynamic_or_pir_mode():
+        return _C_ops.fused_act_dequant(x, x_scale)
+
+
+def fused_swiglu_weighted_bwd(
+    o1: Tensor,
+    do2_s: Tensor,
+    unzipped_probs: Tensor,
+    name: str | None = None,
+) -> tuple[Tensor, Tensor, Tensor]:
+    if in_dynamic_or_pir_mode():
+        return _C_ops.fused_swiglu_weighted_bwd(o1, do2_s, unzipped_probs)
+
+
 def fused_transpose_split_quant(x, tokens_per_expert, pow_2_scales=False):
 
     tokens_per_expert = [int(t) for t in tokens_per_expert]
@@ -93,4 +111,16 @@ def fused_transpose_split_quant(x, tokens_per_expert, pow_2_scales=False):
     if in_dynamic_or_pir_mode():
         return _C_ops.fused_transpose_split_quant(
             x, tokens_per_expert, pow_2_scales
+        )
+
+
+def fused_weighted_swiglu_act_quant(
+    x: Tensor,
+    prob: Tensor | None = None,
+    using_pow2_scaling: bool = False,
+    name: str | None = None,
+) -> tuple[Tensor, Tensor]:
+    if in_dynamic_or_pir_mode():
+        return _C_ops.fused_weighted_swiglu_act_quant(
+            x, prob, using_pow2_scaling
         )
