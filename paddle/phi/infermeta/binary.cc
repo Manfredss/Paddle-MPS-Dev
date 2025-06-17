@@ -4452,12 +4452,21 @@ void SwiGLUInferMeta(const MetaTensor& x,
                      const MetaTensor& y,
                      MetaTensor* out) {
   if (y) {
-    PADDLE_ENFORCE_EQ(
-        x.dims(),
-        y.dims(),
-        common::errors::InvalidArgument(
-            "The shape of Input(X) should be equal of the shape of Input(Y)."));
+    auto x_numel = common::product(x.dims());
+    auto y_numel = common::product(y.dims());
+    // skip 0-size
+    if (x_numel != 0 && y_numel != 0) {
+      PADDLE_ENFORCE_EQ(
+          x.dims(),
+          y.dims(),
+          common::errors::InvalidArgument("The shape of Input(X) should be "
+                                          "equal of the shape of Input(Y)."));
+    }
     out->share_meta(x);
+    // If y is 0-size, out is 0-size
+    if (x_numel != 0 && y_numel == 0) {
+      out->set_dims(y.dims());
+    }
   } else {
     auto dims = x.dims();
     PADDLE_ENFORCE_EQ(
