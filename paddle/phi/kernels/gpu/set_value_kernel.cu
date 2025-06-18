@@ -85,7 +85,7 @@ void SetTensorValueKernelV2(const Context& dev_ctx,
     return;
   }
 
-  CheckIsDimsMatch(phi::make_ddim(new_out_shape), value.dims());
+  phi::funcs::CheckIsDimsMatch(phi::make_ddim(new_out_shape), value.dims());
   if (new_out_shape.empty()) new_out_shape.push_back(1);
   DenseTensor expand_tensor;
   if (value.numel() == 1) {
