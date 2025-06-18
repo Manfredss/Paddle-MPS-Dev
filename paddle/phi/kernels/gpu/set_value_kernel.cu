@@ -91,6 +91,12 @@ void SetTensorValueKernelV2(const Context& dev_ctx,
   if (value.numel() == 1) {
     expand_tensor = value;
     expand_tensor.Resize(phi::make_ddim({1}));
+  } else if (product(value.dims()) == product(phi::make_ddim(new_out_shape))) {
+    expand_tensor = value;
+    if (value.dims() != phi::make_ddim(new_out_shape)) {
+      expand_tensor.Resize(phi::make_ddim(new_out_shape));
+    }
+
   } else {
     auto value_dims = phi::vectorize<int64_t>(value.dims());
     DenseTensor value_tensor = Empty<T>(dev_ctx, IntArray{value_dims});
@@ -109,12 +115,21 @@ void SetTensorValueKernelV2(const Context& dev_ctx,
 
   out->ResetHolder(in.Holder());
   out->ShareInplaceVersionCounterWith(in);
-  StridedCopyKernel<T, Context>(dev_ctx,
-                                expand_tensor,
-                                new_out_shape,
-                                new_out_stride,
-                                output_offset,
-                                out);
+  if (starts_local.empty() && ends_local.empty() && steps_local.empty()) {
+    if (expand_tensor.numel() == 1) {
+      ExpandKernel<T, Context>(
+          dev_ctx, expand_tensor, IntArray{new_out_shape}, out);
+    } else {
+      Copy<Context>(dev_ctx, expand_tensor, dev_ctx.GetPlace(), false, out);
+    }
+  } else {
+    StridedCopyKernel<T, Context>(dev_ctx,
+                                  expand_tensor,
+                                  new_out_shape,
+                                  new_out_stride,
+                                  output_offset,
+                                  out);
+  }
   out->set_meta(meta);
 }
 
