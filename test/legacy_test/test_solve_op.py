@@ -340,9 +340,7 @@ class TestSolveOpAPI_1(unittest.TestCase):
                 feed={"input_x": np_input_x, "input_y": np_input_y},
                 fetch_list=[paddle_result],
             )
-            np.testing.assert_allclose(
-                fetches[0], np.linalg.solve(np_input_x, np_input_y), rtol=1e-05
-            )
+            np.testing.assert_allclose(fetches[0], np_result, rtol=1e-05)
 
     def test_static(self):
         for place in self.place:
@@ -399,9 +397,7 @@ class TestSolveOpAPI_2(unittest.TestCase):
                 feed={"input_x": np_input_x, "input_y": np_input_y},
                 fetch_list=[paddle_result],
             )
-            np.testing.assert_allclose(
-                fetches[0], np.linalg.solve(np_input_x, np_input_y), rtol=1e-05
-            )
+            np.testing.assert_allclose(fetches[0], np_result, rtol=1e-05)
 
     def test_static(self):
         for place in self.place:
@@ -457,9 +453,7 @@ class TestSolveOpAPI_3(unittest.TestCase):
                 feed={"input_x": np_input_x, "input_y": np_input_y},
                 fetch_list=[paddle_result],
             )
-            np.testing.assert_allclose(
-                fetches[0], np.linalg.solve(np_input_x, np_input_y), rtol=0.0001
-            )
+            np.testing.assert_allclose(fetches[0], np_result, rtol=0.0001)
 
     def test_static(self):
         for place in self.place:
@@ -515,9 +509,7 @@ class TestSolveOpAPI_4(unittest.TestCase):
                 feed={"input_x": np_input_x, "input_y": np_input_y},
                 fetch_list=[paddle_result],
             )
-            np.testing.assert_allclose(
-                fetches[0], np.linalg.solve(np_input_x, np_input_y), rtol=1e-05
-            )
+            np.testing.assert_allclose(fetches[0], np_result, rtol=1e-05)
 
     def test_static(self):
         for place in self.place:
@@ -819,14 +811,14 @@ class TestSolveOpSingularAPI(unittest.TestCase):
 
             exe = base.Executor(place)
             try:
-                fetches = exe.run(
+                exe.run(
                     base.default_main_program(),
                     feed={"x": input_x_np, "y": input_y_np},
                     fetch_list=[result],
                 )
-            except RuntimeError as ex:
+            except RuntimeError:
                 print("The mat is singular")
-            except ValueError as ex:
+            except ValueError:
                 print("The mat is singular")
 
     def test_static(self):
@@ -842,10 +834,10 @@ class TestSolveOpSingularAPI(unittest.TestCase):
                 input_x = paddle.to_tensor(input_x_np)
                 input_y = paddle.to_tensor(input_y_np)
                 try:
-                    result = paddle.linalg.solve(input_x, input_y)
-                except RuntimeError as ex:
+                    paddle.linalg.solve(input_x, input_y)
+                except RuntimeError:
                     print("The mat is singular")
-                except ValueError as ex:
+                except ValueError:
                     print("The mat is singular")
 
 
@@ -889,7 +881,7 @@ class TestSolveOpAPIZeroDimCase(unittest.TestCase):
                 y_shape=[6, 0, 0],
                 np_y_shape=[10, 0, 0],
             )
-            with self.assertRaises(ValueError) as context:
+            with self.assertRaises(ValueError):
                 self.check_static_result(
                     place=place,
                     x_shape=[10, 0, 0],
@@ -936,7 +928,7 @@ class TestSolveOpAPIZeroDimCase(unittest.TestCase):
             run(place, x_shape=[10, 0, 0], y_shape=[10, 0, 0])
             run(place, x_shape=[10, 1, 1], y_shape=[10, 1, 0])
 
-            with self.assertRaises(ValueError) as context:
+            with self.assertRaises(ValueError):
                 run(place, x_shape=[10, 0, 0], y_shape=[10])
 
 
