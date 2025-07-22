@@ -3071,6 +3071,13 @@ def cross_entropy(
             #   so, reduce_sum all directly is ok
             return _C_ops.sum(out, [], None, False)
         elif reduction == "mean":
+            # when reduction is mean, use paddle.nan
+            def _replace_nan(out):
+                return out + paddle.nan
+
+            if 0 in input.shape:
+                out = _replace_nan(out)
+                return _C_ops.mean_all(out)
             # 1. if weight==none,
             #     numerator: reduce_sum all loss directly is ok causeof base_softmax_with_cross_entropy's inner logic
             #     denominator: count sample num with class_index!=ignore_index
