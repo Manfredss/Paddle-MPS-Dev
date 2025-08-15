@@ -122,6 +122,7 @@ from . import (
     _pir_ops as _pir_ops,
     _typing as _typing,
     callbacks as callbacks,
+    compat as compat,
     fft as fft,
     hub as hub,
     linalg as linalg,
