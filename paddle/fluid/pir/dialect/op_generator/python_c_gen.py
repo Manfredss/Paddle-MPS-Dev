@@ -233,9 +233,9 @@ MUTABLE_ATTR_OBJ_TEMPLATE = """
         PyObject *{name}_obj = PyTuple_GET_ITEM(args, {index});"""
 
 MUTABLE_ATTR_OBJ_FROM_ARGS_KWARGS_WITH_DEFAULT_VALUE_TEMPLATE = """
-        PyObject *{name}_obj = GetItemFromArgsOrKWArgs(args, {index},kwargs,{keywords}, nargs, &remaining_kwargs,false);"""
-MUTABLE_ATTR_OBJ_FROM_ARGS_KWARGS_TEMPLATE = """
         PyObject *{name}_obj = GetItemFromArgsOrKWArgs(args, {index},kwargs,{keywords}, nargs, &remaining_kwargs);"""
+MUTABLE_ATTR_OBJ_FROM_ARGS_KWARGS_TEMPLATE = """
+        PyObject *{name}_obj = GetItemFromArgsOrKWArgs(args, {index},kwargs,{keywords}, nargs, &remaining_kwargs,false);"""
 
 MUTABLE_ATTR_CAST_TEMPLATE = """
             {type} {name_} = {cast_func}({name}_obj, "{api_name}", {index});"""
@@ -273,7 +273,7 @@ TYPE_TO_FUNC_MAP = {
     "paddle::Place": "CastPyArg2Place",
     "phi::Place": "CastPyArg2Place",
     "Place": "CastPyArg2Place",
-    "phi::DataType": "CastPyArg2DataTypeDirectly",
+    "phi::DataType": "CastPyArg2DataType",
 }
 
 TYPE_TO_PHI_DATATYPE_MAP = {
@@ -439,6 +439,8 @@ class PythonCCodeGen(CodeGen):
         return ret
 
     def _gen_attrs_py_obj_with_mutable(self, op_info, args_alias_map={}):
+        if self.use_custom_args_mapper:
+            return DISABLE_TIPS
         input_size = len(op_info.input_name_list)
         name_list = op_info.attribute_name_list
         default_value_list = op_info.attribute_default_value_list
@@ -478,6 +480,8 @@ class PythonCCodeGen(CodeGen):
         return ret
 
     def _gen_cast_attrs(self, op_info, op_name):
+        if self.use_custom_args_mapper:
+            return DISABLE_TIPS
         input_size = len(op_info.input_name_list)
         attr_name_list = op_info.attribute_name_list
         attr_type_list = op_info.attribute_build_arg_type_list
@@ -652,7 +656,10 @@ class PythonCCodeGen(CodeGen):
             all_params_list.append(name)
         attribute_name_list = op_info.attribute_name_list
         attribute_type_list = op_info.attribute_build_arg_type_list
+        mutable_attr_name_list = op_info.mutable_attribute_name_list
         for name, type in zip(attribute_name_list, attribute_type_list):
+            if name in mutable_attr_name_list:
+                type = OP_INPUT
             custom_args_mapper_str += PARAMS_DECLARE_TEMPLE.format(
                 name=name, type=_trans_dtype(type)
             )
