@@ -80,6 +80,9 @@ add_doc_and_signature(
             output Tensor. The result tensor will have one fewer dimension
             than the `x` unless :attr:`keepdim` is true, default
             value is False.
+        out (Tensor|None, optional): Output tensor. If provided in dynamic graph, the result will
+            be written to this tensor and also returned. The returned tensor and `out` share memory
+            and autograd meta. Default: None.
         name (str|None, optional): Name for the operation (optional, default is None). For more information, please refer to :ref:`api_guide_Name`.
 
     Returns:
@@ -216,6 +219,9 @@ add_doc_and_signature(
             output Tensor. The result tensor will have one fewer dimension
             than the `x` unless :attr:`keepdim` is true, default
             value is False.
+        out (Tensor|None, optional): Output tensor. If provided in dynamic graph, the result will
+            be written to this tensor and also returned. The returned tensor and `out` share memory
+            and autograd meta. Default: None.
         name (str|None, optional): Name for the operation (optional, default is None). For more information, please refer to :ref:`api_guide_Name`.
 
     Returns:
