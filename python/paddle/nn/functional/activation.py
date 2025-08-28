@@ -1078,7 +1078,7 @@ def selu(
 
 
 @param_one_alias(["x", "input"])
-def silu(x: Tensor, name: str | None = None) -> Tensor:
+def silu(x: Tensor, inplace: bool = False, name: str | None = None) -> Tensor:
     r"""
     silu activation
 
@@ -1095,6 +1095,7 @@ def silu(x: Tensor, name: str | None = None) -> Tensor:
     Parameters:
         x (Tensor): The input Tensor with data type bfloat16, float16, float32, float64, complex64, complex128.
             alias: ``input``.
+        inplace (bool, optional): Whether to use inplace operation. Default: False.
         name (str|None, optional): For details, please refer to :ref:`api_guide_Name`. Generally, no setting is required. Default: None.
 
     Returns:
@@ -1111,10 +1112,21 @@ def silu(x: Tensor, name: str | None = None) -> Tensor:
             >>> print(out)
             Tensor(shape=[4], dtype=float32, place=Place(cpu), stop_gradient=True,
             [0.73105860, 1.76159406, 2.85772228, 3.92805505])
+
+            >>> out = F.silu(x, True)
+            >>> print(out)
+            Tensor(shape=[4], dtype=float32, place=Place(cpu), stop_gradient=True,
+            [0.73105860, 1.76159406, 2.85772228, 3.92805505])
+            >>> print(x)
+            Tensor(shape=[4], dtype=float32, place=Place(cpu), stop_gradient=True,
+            [0.73105860, 1.76159406, 2.85772228, 3.92805505])
     """
 
     if in_dynamic_or_pir_mode():
-        return _C_ops.silu(x)
+        if inplace:
+            return _C_ops.silu_(x)
+        else:
+            return _C_ops.silu(x)
     else:
         check_variable_and_dtype(
             x,
