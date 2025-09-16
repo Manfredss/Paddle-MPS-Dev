@@ -201,6 +201,7 @@ from . import (
     callbacks as callbacks,
     compat as compat,
     fft as fft,
+    functional as functional,
     hub as hub,
     library as library,
     linalg as linalg,
