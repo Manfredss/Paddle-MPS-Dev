@@ -33,6 +33,18 @@ from paddle.base.framework import (
     is_compiled_with_distribute,
     is_compiled_with_rocm,
 )
+from paddle.tensor.creation import (
+    BFloat16Tensor,
+    BoolTensor,
+    ByteTensor,
+    CharTensor,
+    DoubleTensor,
+    FloatTensor,
+    HalfTensor,
+    IntTensor,
+    LongTensor,
+    ShortTensor,
+)
 
 from . import (  # noqa: F401
     cuda,
@@ -173,6 +185,16 @@ __all__ = [
     'get_device_capability',
     'get_rng_state',
     'set_rng_state',
+    'FloatTensor',
+    'DoubleTensor',
+    'HalfTensor',
+    'BFloat16Tensor',
+    'ByteTensor',
+    'CharTensor',
+    'ShortTensor',
+    'IntTensor',
+    'LongTensor',
+    'BoolTensor',
     'device',
     'is_bf16_supported',
     'manual_seed',
@@ -1762,6 +1784,40 @@ def manual_seed_all(seed: int) -> None:
 
     """
     paddle.seed(seed)
+
+
+class nvtx:
+    """Namespace for NVTX marker operations."""
+
+    @staticmethod
+    def range_push(msg: str):
+        """
+        Push an NVTX range marker with the given message.
+
+        Args:
+            msg (str): The name of the NVTX range.
+        Example:
+            .. code-block:: python
+                >>> # doctest: +REQUIRES(env:GPU)
+                >>> import paddle
+                >>> # paddle.device.nvtx.range_push("test") is equivalent to paddle.cuda.nvtx.range_push("test")
+                >>> paddle.device.nvtx.range_push("test")
+
+        """
+        paddle.base.core.nvprof_nvtx_push(msg)
+
+    @staticmethod
+    def range_pop():
+        """
+        Pop the most recent NVTX range marker.
+        Example:
+            .. code-block:: python
+                >>> # doctest: +REQUIRES(env:GPU)
+                >>> import paddle
+                >>> # paddle.device.nvtx.range_pop("test") is equivalent to paddle.cuda.nvtx.range_pop("test")
+                >>> paddle.device.nvtx.range_pop()
+        """
+        paddle.base.core.nvprof_nvtx_pop()
 
 
 def reset_peak_memory_stats(device: PlaceLike | int | None = None) -> None:
