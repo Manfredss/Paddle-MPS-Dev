@@ -79,6 +79,17 @@ cc_test(
   SRCS allocator_facade_abs_flags_test.cc
   DEPS phi common)
 
+if(WITH_GPU)
+  if(WIN32)
+    message(STATUS "Skip vmm_allocator_tail_test on Windows")
+  else()
+    nv_test(
+      vmm_allocator_tail_test
+      SRCS vmm_allocator_tail_test.cc
+      DEPS phi common)
+  endif()
+endif()
+
 cc_test(
   allocator_facade_frac_flags_test
   SRCS allocator_facade_frac_flags_test.cc
