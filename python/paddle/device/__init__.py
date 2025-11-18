@@ -610,12 +610,21 @@ def set_device(device: PlaceLike | int) -> PlaceLike:
 
         .. code-block:: python
 
+            >>> # doctest: +REQUIRES(env:GPU)
             >>> import paddle
 
             >>> paddle.device.set_device("cpu")
             >>> x1 = paddle.ones(name='x1', shape=[1, 2], dtype='int32')
+            >>> print(x1.place)
+            Place(cpu)
+
+            >>> paddle.device.set_device("gpu:0")
             >>> x2 = paddle.zeros(name='x2', shape=[1, 2], dtype='int32')
-            >>> data = paddle.stack([x1,x2], axis=1)
+            >>> print(x2.place)
+            Place(gpu:0)
+            >>> # x1 is still on cpu
+            >>> print(x1.place)
+            Place(cpu)
 
     """
     place = device_to_place(device)
