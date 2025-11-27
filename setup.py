@@ -2256,13 +2256,15 @@ def get_headers():
         )
 
     if env_dict.get("WITH_XPU") == 'ON':
-        headers += list(
-            find_files(
+        headers += [
+            h
+            for h in find_files(
                 '*.h',
                 paddle_binary_dir + '/third_party/xpu/src/extern_xpu/xpu',
                 recursive=True,
             )
-        )  # xdnn api headers
+            if '/include/xpu/kernel/' not in h
+        ]  # xdnn api headers
         headers += list(
             find_files(
                 '*.hpp',
