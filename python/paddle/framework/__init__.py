@@ -21,6 +21,7 @@ from ..base.core import (  # noqa: F401
     CUDAPlace,
     CustomPlace,
     IPUPlace,
+    MPSPlace,
     XPUPinnedPlace,
     XPUPlace,
 )

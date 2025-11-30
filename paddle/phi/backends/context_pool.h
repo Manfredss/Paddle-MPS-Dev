@@ -62,6 +62,13 @@ struct DefaultDeviceContextType<phi::XPUPlace> {
 };
 #endif
 
+#ifdef PADDLE_WITH_MPS
+template <>
+struct DefaultDeviceContextType<phi::MPSPlace> {
+  using TYPE = phi::MPSContext;
+};
+#endif
+
 #ifdef PADDLE_WITH_CUSTOM_DEVICE
 template <>
 struct DefaultDeviceContextType<phi::CustomPlace> {

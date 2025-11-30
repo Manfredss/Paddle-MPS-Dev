@@ -25,5 +25,8 @@ limitations under the License. */
 #include "paddle/phi/backends/gpu/gpu_context.h"
 #include "paddle/phi/backends/onednn/onednn_context.h"
 #include "paddle/phi/backends/xpu/xpu_context.h"
+#ifdef PADDLE_WITH_MPS
+#include "paddle/phi/backends/mps/mps_context.h"
+#endif
 
 namespace phi {}  // namespace phi

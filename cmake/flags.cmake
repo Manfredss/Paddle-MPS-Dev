@@ -231,7 +231,7 @@ if(NOT WIN32)
 endif()
 
 if(APPLE)
-  if(WITH_ARM)
+  if(WITH_ARM OR WITH_MPS)
     set(CMAKE_OSX_ARCHITECTURES
         "arm64"
         CACHE STRING "Build architectures for OSX" FORCE)

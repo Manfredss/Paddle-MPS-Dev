@@ -39,6 +39,11 @@ if(WITH_XPU)
     xpu/xpu_l3_strategy.cc)
 endif()
 
+if(WITH_MPS AND APPLE)
+  add_subdirectory(mps)
+  list(APPEND BACKENDS_SRCS mps/mps_context.mm mps/mps_info.mm)
+endif()
+
 if(WITH_ONEDNN)
   list(APPEND BACKENDS_SRCS onednn/onednn_context.cc)
   list(APPEND BACKENDS_SRCS onednn/axpy_handler.cc)

@@ -53,6 +53,9 @@ enum class Backend : uint8_t {
   // various acceleration devices' backends
   XPU,  // XPU currently does not exist at the same time as CUDA
   IPU,
+#ifdef PADDLE_WITH_MPS
+  MPS,  // Apple Metal Performance Shaders
+#endif
 
   // paddle kernel primitives backend
   KPS,
@@ -90,6 +93,11 @@ inline std::ostream& operator<<(std::ostream& os, Backend backend) {
     case Backend::XPU:
       os << "XPU";
       break;
+#ifdef PADDLE_WITH_MPS
+    case Backend::MPS:
+      os << "MPS";
+      break;
+#endif
     case Backend::ONEDNN:
       os << "ONEDNN";
       break;
@@ -133,6 +141,10 @@ inline Backend StringToBackend(const char* backend_cstr) {
     return Backend::GPU;
   } else if (s == std::string("XPU")) {
     return Backend::XPU;
+#ifdef PADDLE_WITH_MPS
+  } else if (s == std::string("MPS")) {
+    return Backend::MPS;
+#endif
   } else if (s == std::string("OneDNN")) {
     return Backend::ONEDNN;
   } else if (s == std::string("GPUDNN")) {
@@ -167,6 +179,10 @@ inline std::string BackendToString(const Backend& backend) {
       return "GPU";
     case Backend::XPU:
       return "XPU";
+#ifdef PADDLE_WITH_MPS
+    case Backend::MPS:
+      return "MPS";
+#endif
     case Backend::ONEDNN:
       return "ONEDNN";
     case Backend::GPUDNN:
@@ -198,6 +214,8 @@ inline Backend get_accelerat_backend() {
   return Backend::GPU;
 #elif defined(PADDLE_WITH_XPU)
   return Backend::XPU;
+#elif defined(PADDLE_WITH_MPS)
+  return Backend::MPS;
 #elif defined(PADDLE_WITH_IPU)
   return Backend::IPU;
 #elif defined(PADDLE_WITH_CUSTOM_DEVICE)

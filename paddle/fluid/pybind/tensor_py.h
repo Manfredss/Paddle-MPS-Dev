@@ -473,6 +473,17 @@ void SetTensorFromPyArrayT(
         "Cannot use IPUPlace in CPU/GPU/XPU version, "
         "Please recompile or reinstall Paddle with IPU support."));
 #endif
+  } else if (phi::is_mps_place(place)) {
+#ifdef PADDLE_WITH_MPS
+    // MPS uses unified memory, so we can use memcpy directly
+    // The memory is accessible from both CPU and GPU without explicit transfer
+    auto dst = self->mutable_data<T>(place);
+    std::memcpy(dst, array.data(), array.nbytes());
+#else
+    PADDLE_THROW(common::errors::PermissionDenied(
+        "Cannot use MPSPlace in CPU/GPU/XPU version, "
+        "Please recompile or reinstall Paddle with MPS support."));
+#endif
   } else if (phi::is_custom_place(place)) {
 #ifdef PADDLE_WITH_CUSTOM_DEVICE
     phi::Place tmp_place = place;

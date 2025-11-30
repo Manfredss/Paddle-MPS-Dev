@@ -246,6 +246,20 @@ else()
     target_link_libraries(phi_gpu ${ROCM_HIPRTC_LIB})
     target_link_libraries(phi_core ${ROCM_HIPRTC_LIB})
   endif()
+  if(WITH_MPS AND APPLE)
+    # Link macOS frameworks using -framework flag
+    # MetalPerformanceShadersGraph is needed for MPSGraph API
+    target_link_libraries(phi_core 
+      "-framework Metal" 
+      "-framework MetalPerformanceShaders" 
+      "-framework MetalPerformanceShadersGraph"
+      "-framework Foundation")
+    target_link_libraries(phi 
+      "-framework Metal" 
+      "-framework MetalPerformanceShaders" 
+      "-framework MetalPerformanceShadersGraph"
+      "-framework Foundation")
+  endif()
 endif()
 
 # Note(silverling): some functions in phi_core depend on phi_gpu,

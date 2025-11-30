@@ -705,7 +705,11 @@ class CustomDevice : public DeviceInterface {
   case in:                     \
     return C_DataType::ret
     switch (data_type) {
+#ifdef __OBJC__
+      return_result(phi::DataType::BOOL, BOOL_TYPE);
+#else
       return_result(phi::DataType::BOOL, BOOL);
+#endif
       return_result(phi::DataType::UINT8, UINT8);
       return_result(phi::DataType::UINT16, UINT16);
       return_result(phi::DataType::UINT32, UINT32);

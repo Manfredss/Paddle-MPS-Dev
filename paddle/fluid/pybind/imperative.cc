@@ -132,6 +132,8 @@ static const phi::Place PyObjectToPlace(const py::object &place_obj) {
     return place_obj.cast<phi::XPUPinnedPlace>();
   } else if (py::isinstance<phi::IPUPlace>(place_obj)) {
     return place_obj.cast<phi::IPUPlace>();
+  } else if (py::isinstance<phi::MPSPlace>(place_obj)) {
+    return place_obj.cast<phi::MPSPlace>();
   } else if (py::isinstance<phi::Place>(place_obj)) {
     return place_obj.cast<phi::Place>();
   } else if (py::isinstance<phi::CustomPlace>(place_obj)) {
@@ -140,7 +142,7 @@ static const phi::Place PyObjectToPlace(const py::object &place_obj) {
     PADDLE_THROW(common::errors::InvalidArgument(
         "Place should be one of "
         "Place/CPUPlace/XPUPlace/CUDAPlace/CUDAPinnedPlace/IPUPlace/"
-        "XPUPinnedPlace/CustomPlace"));
+        "XPUPinnedPlace/MPSPlace/CustomPlace"));
   }
 }
 
@@ -188,13 +190,15 @@ static void InitVarBaseAndTensor(imperative::VarBase *self,
     SetTensorFromPyArray<phi::XPUPinnedPlace>(tensor, array, place, zero_copy);
   } else if (phi::is_ipu_place(place)) {
     SetTensorFromPyArray<phi::IPUPlace>(tensor, array, place, zero_copy);
+  } else if (phi::is_mps_place(place)) {
+    SetTensorFromPyArray<phi::MPSPlace>(tensor, array, place, zero_copy);
   } else if (phi::is_custom_place(place)) {
     SetTensorFromPyArray<phi::CustomPlace>(tensor, array, place, zero_copy);
   } else {
     PADDLE_THROW(common::errors::InvalidArgument(
         "Place should be one of "
         "CPUPlace/XPUPlace/CUDAPlace/CUDAPinnedPlace/"
-        "XPUPinnedPlace/IPUPlace/"));
+        "XPUPinnedPlace/IPUPlace/MPSPlace/"));
   }
   self->SetDataType(framework::TransToProtoVarType(tensor->dtype()));
 }

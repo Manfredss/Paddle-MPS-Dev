@@ -96,6 +96,9 @@ limitations under the License. */
 #include "paddle/phi/backends/cpu/cpu_info.h"
 #include "paddle/phi/backends/device_manager.h"
 #include "paddle/phi/backends/dynload/dynamic_loader.h"
+#ifdef PADDLE_WITH_MPS
+#include "paddle/phi/backends/mps/mps_info.h"
+#endif
 #include "paddle/phi/common/place.h"
 #include "paddle/phi/core/compat/convert_utils.h"
 #include "paddle/phi/core/lod_utils.h"
@@ -179,6 +182,9 @@ PyTypeObject *g_xpuplace_pytype = nullptr;
 PyTypeObject *g_cudapinnedplace_pytype = nullptr;
 PyTypeObject *g_xpupinnedplace_pytype = nullptr;
 PyTypeObject *g_ipuplace_pytype = nullptr;
+#ifdef PADDLE_WITH_MPS
+PyTypeObject *g_mpsplace_pytype = nullptr;
+#endif
 
 template <typename PlaceType>
 static inline int PlaceIndex(const PlaceType &p) {  // NOLINT
@@ -757,6 +763,66 @@ void BindPlace(pybind11::module &m) {  // NOLINT
       .def("_equals", &IsSamePlace<phi::IPUPlace, phi::GPUPinnedPlace>)
       .def("_equals", &IsSamePlace<phi::IPUPlace, phi::XPUPinnedPlace>)
       .def("__str__", string::to_string<const phi::IPUPlace &>);
+
+#ifdef PADDLE_WITH_MPS
+  // MPSPlace
+  py::class_<phi::MPSPlace, phi::Place> mpsplace(m, "MPSPlace", R"DOC(
+    MPSPlace is a descriptor of a device.
+    It represents an Apple Metal Performance Shaders device on which a tensor will be allocated and a model will run.
+
+    Examples:
+        .. code-block:: python
+
+            >>> # doctest: +REQUIRES(env:MPS)
+            >>> import paddle
+            >>> mps_place = paddle.MPSPlace(0)
+
+        )DOC");
+  g_mpsplace_pytype = reinterpret_cast<PyTypeObject *>(mpsplace.ptr());
+  mpsplace
+      .def(py::init([](int device_id) {
+#ifdef PADDLE_WITH_MPS
+        if (phi::backends::mps::GetMPSDeviceCount() == 0) {
+          LOG(ERROR) << "Cannot use MPS because there is no MPS "
+                        "detected on your "
+                        "machine.";
+          PADDLE_THROW(::common::errors::InvalidArgument(
+              "use wrong place, Please check."));
+        }
+        if (device_id < 0 || device_id >= phi::backends::mps::GetMPSDeviceCount()) {
+          PADDLE_THROW(::common::errors::InvalidArgument(
+              "Invalid MPS device id: %d. Available device count is %d.",
+              device_id, phi::backends::mps::GetMPSDeviceCount()));
+        }
+        return std::make_unique<phi::MPSPlace>(device_id);
+#else
+        LOG(ERROR) << string::Sprintf(
+            "Cannot use MPS because you didn't install MPS version "
+            "PaddlePaddle.\n"
+            "If you want to use MPS, please try to install MPS version "
+            "PaddlePaddle by: pip install paddlepaddle*\n"
+            "If you only have CPU, please change MPSPlace to be "
+            "CPUPlace().\n");
+        PADDLE_THROW(::common::errors::InvalidArgument(
+            "use wrong place, Please check."));
+#endif
+      }), py::arg("device_id") = 0)
+      .def("_type", &PlaceIndex<phi::MPSPlace>)
+      .def("_equals", &IsSamePlace<phi::MPSPlace, phi::Place>)
+      .def("_equals", &IsSamePlace<phi::MPSPlace, phi::CPUPlace>)
+      .def("_equals", &IsSamePlace<phi::MPSPlace, phi::MPSPlace>)
+      .def("mps_device_id", &phi::MPSPlace::GetDeviceId)
+      .def("get_device_id", &phi::MPSPlace::GetDeviceId)
+      .def("__repr__", string::to_string<const phi::MPSPlace &>)
+      .def("__str__", string::to_string<const phi::MPSPlace &>);
+
+  m.def("is_mps_place", phi::is_mps_place);
+  m.def("mps_device_id", [](const phi::MPSPlace& place) { return place.GetDeviceId(); });
+  m.def("get_mps_device_count", phi::backends::mps::GetMPSDeviceCount);
+  m.def("mps_empty_cache", phi::backends::mps::EmptyCache);
+  m.def("get_mps_device_name", phi::backends::mps::GetMPSDeviceName);
+  m.def("get_mps_device_total_memory", phi::backends::mps::GetMPSDeviceTotalMemory);
+#endif
 }
 
 }  // namespace paddle::pybind

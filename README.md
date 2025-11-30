@@ -1,81 +1,451 @@
-<p align="center">
-<img align="center" src="doc/imgs/logo.png", width=1600>
-<p>
+# Paddle-MPS-Dev: Metal Performance Shaders (MPS) Backend for PaddlePaddle
 
---------------------------------------------------------------------------------
+This document describes the implementation of Metal Performance Shaders (MPS) support for PaddlePaddle, enabling GPU acceleration on Apple Silicon (M1/M2/M3 and later) devices.
 
-English | [简体中文](./README_cn.md) | [日本語](./README_ja.md)
+## Table of Contents
 
-[![Documentation Status](https://img.shields.io/badge/docs-latest-brightgreen.svg?style=flat)](https://paddlepaddle.org.cn/documentation/docs/en/guides/index_en.html)
-[![Documentation Status](https://img.shields.io/badge/中文文档-最新-brightgreen.svg)](https://paddlepaddle.org.cn/documentation/docs/zh/guides/index_cn.html)
-[![Release](https://img.shields.io/github/release/PaddlePaddle/Paddle.svg)](https://github.com/PaddlePaddle/Paddle/releases)
-[![License](https://img.shields.io/badge/license-Apache%202-blue.svg)](LICENSE)
-![X (formerly Twitter) URL](https://img.shields.io/twitter/url?url=https%3A%2F%2Fx.com%2FPaddlePaddle)
+- [Overview](#overview)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Building with MPS Support](#building-with-mps-support)
+- [Usage](#usage)
+- [Implemented Operators](#implemented-operators)
+- [Architecture](#architecture)
+- [Testing](#testing)
+- [Known Limitations](#known-limitations)
+- [Contributing](#contributing)
 
-Welcome to the PaddlePaddle GitHub.
+## Overview
 
-PaddlePaddle, as the first independent R&D deep learning platform in China, has been officially open-sourced to professional communities since 2016. It is an industrial platform with advanced technologies and rich features that cover core deep learning frameworks, basic model libraries, end-to-end development kits, tools & components as well as service platforms.
-PaddlePaddle originates from industrial practices with dedication and commitments to industrialization. It has been widely adopted by a wide range of sectors including manufacturing, agriculture, enterprise service, and so on while serving more than 23.33 million developers, 760,000 companies and generating 1,100,000 models. With such advantages, PaddlePaddle has helped an increasing number of partners commercialize AI.
+Metal Performance Shaders (MPS) is Apple's framework for high-performance GPU-accelerated computation on Apple Silicon. This implementation brings MPS support to PaddlePaddle, allowing users to leverage the GPU capabilities of their Mac devices for deep learning workloads.
 
-## Installation
+The implementation follows a similar API design to PyTorch's MPS backend, making it familiar to users who have experience with PyTorch on macOS.
 
-### Latest PaddlePaddle Release: 3.2
-Our vision is to enable deep learning for everyone via PaddlePaddle.
-Please refer to our [release announcement](https://github.com/PaddlePaddle/Paddle/releases) to track the latest features of PaddlePaddle.
+## Features
 
-### Install Latest Stable Release or Nightly Release
+### Core Functionality
 
-For detailed information about installation, please view [Quick Install](https://www.paddlepaddle.org.cn/install/quick)
+- ✅ **Device Management**: Full support for MPS device detection, selection, and management
+- ✅ **Memory Management**: Custom MPS allocator with unified memory support
+- ✅ **Tensor Operations**: Basic tensor creation and operations on MPS devices
+- ✅ **Memory Copy**: Efficient CPU ↔ MPS and MPS ↔ MPS memory transfers
+- ✅ **Python API**: PyTorch-style API (`paddle.mps.is_available()`, `paddle.mps.set_device()`, etc.)
 
-## **PaddlePaddle New Generation Framework 3.2**
+### Implemented Operators
 
-* **Unified Dynamic/Static Graphs and Automatic Parallelism**
+#### Elementwise Binary Operations
+- `add` - Elementwise addition
+- `multiply` - Elementwise multiplication
+- `subtract` - Elementwise subtraction
+- `divide` - Elementwise division
 
-    By requiring only minimal tensor partitioning annotations based on a single-card configuration, PaddlePaddle automatically discovers the most efficient distributed parallel strategy. This significantly reduces the costs of industrial development and training, enabling developers to focus more intently on model and algorithm innovation.
+#### Unary Operations
+- `abs` - Absolute value
+- `exp` - Exponential function
+- `log` - Natural logarithm
+- `sqrt` - Square root
+- `relu` - Rectified Linear Unit activation
+- `sigmoid` - Sigmoid activation function
 
-* **Integrated Training and Inference for Large Models**
+### Memory Management Features
 
-    The same framework supports both training and inference, achieving code reuse and seamless integration between these stages. This provides a unified development experience and maximum training efficiency for the entire large model workflow, offering the industry a superior development experience.
+- **Unified Memory**: Leverages Apple Silicon's unified memory architecture
+- **Buddy Allocator**: Efficient memory allocation using buddy allocator strategy
+- **Memory Statistics**: Track allocated and reserved memory per device
+- **Cache Management**: `empty_cache()` function to release unused memory
 
-* **High-Order Differentiation for Scientific Computing**
+## Requirements
 
-    Provides capabilities such as high-order automatic differentiation, complex number operations, Fourier transforms, compilation optimization, and distributed training support. It facilitates scientific exploration in fields including mathematics, mechanics, materials science, meteorology, and biology, substantially improving the speed of solving differential equations.
+### Hardware
+- Apple Silicon Mac (M1, M2, M3, or later)
+- macOS 12.0 or later (for MPSGraph support)
 
-* **Neural Network Compiler**
+### Software
+- Xcode with Command Line Tools
+- CMake 3.15 or later
+- Python 3.7 or later
 
-    Adopting an integrated framework design, it supports efficient training and flexible inference for diverse models, including generative and scientific computing models. It achieves an effective balance between computational flexibility and high performance, significantly lowering performance optimization costs.
+## Building with MPS Support
 
-* **Heterogeneous Multi-Chip Adaptation**
-    Features a mature and complete unified adaptation solution for multiple hardware types. Through standardized interfaces, it abstracts the variations in development interfaces across different chip software stacks, realizing a pluggable architecture.
+### CMake Configuration
 
-## Documentation
+Enable MPS support when configuring the build:
 
-We provide [English](https://www.paddlepaddle.org.cn/documentation/docs/en/guides/index_en.html) and
-[Chinese](https://www.paddlepaddle.org.cn/documentation/docs/zh/guide/index_cn.html) documentation.
+```bash
+cmake .. \
+  -DWITH_MPS=ON \
+  -DCMAKE_OSX_ARCHITECTURES=arm64
+```
 
-* [Guides](https://www.paddlepaddle.org.cn/documentation/docs/en/guides/index_en.html)
+The `CMAKE_OSX_ARCHITECTURES=arm64` is required as MPS only supports ARM64 architecture.
 
-  You might want to start from how to implement deep learning basics with PaddlePaddle.
+### Build Process
 
-* [Practice](https://www.paddlepaddle.org.cn/documentation/docs/zh/tutorial/index_cn.html)
+```bash
+# Configure
+mkdir build && cd build
+cmake .. -DWITH_MPS=ON -DCMAKE_OSX_ARCHITECTURES=arm64
 
-  So far you have already been familiar with Fluid. And the next step should be building a more efficient model or inventing your original Operator.
+# Build
+make -j$(sysctl -n hw.ncpu)
 
-* [API Reference](https://www.paddlepaddle.org.cn/documentation/docs/en/api/index_en.html)
+# Install Python package
+pip install -e ../python
+```
 
-   Our new API enables much shorter programs.
+## Usage
 
-* [How to Contribute](https://www.paddlepaddle.org.cn/documentation/docs/en/guides/08_contribution/index_en.html)
+### Basic Usage
 
-   We appreciate your contributions!
+```python
+import paddle
 
-## Open Source Community
+# Check if MPS is available
+if paddle.is_compiled_with_mps() and paddle.mps.is_available():
+    print(f"MPS available! Device count: {paddle.mps.device_count()}")
+    
+    # Set device
+    paddle.mps.set_device(0)
+    
+    # Create tensors on MPS
+    x = paddle.randn([2, 3], dtype='float32', place='mps')
+    y = paddle.randn([2, 3], dtype='float32', place='mps')
+    
+    # Perform operations
+    z = x + y
+    w = paddle.exp(x)
+    
+    # Convert back to CPU for NumPy conversion
+    result = z.numpy()
+    print(result)
+```
 
-* [Github Issues](https://github.com/PaddlePaddle/Paddle/issues): bug reports, feature requests, install issues, usage issues, etc.
-* Many of our contribution events offer varying levels of mentorship from experienced community members, please check the events in the pinned issues, and consider attending.
-* Community Blog: <https://pfcc.blog/>
-* See more details about PaddlePaddle community at [community](https://github.com/PaddlePaddle/community).
+### Device Management
 
-## Copyright and License
+```python
+import paddle
 
-PaddlePaddle is provided under the [Apache-2.0 license](LICENSE).
+# Check MPS availability
+print(f"MPS compiled: {paddle.is_compiled_with_mps()}")
+print(f"MPS available: {paddle.mps.is_available()}")
+print(f"Device count: {paddle.mps.device_count()}")
+
+# Set current device
+paddle.mps.set_device(0)
+
+# Get current device
+current_device = paddle.mps.current_device()
+print(f"Current device: {current_device}")
+
+# Get device properties
+props = paddle.mps.get_device_properties()
+print(f"Device name: {paddle.mps.get_device_name()}")
+print(f"Total memory: {props.total_memory / (1024**3):.2f} GB")
+```
+
+### Memory Management
+
+```python
+import paddle
+
+# Check memory usage
+allocated = paddle.mps.memory_allocated()
+reserved = paddle.mps.memory_reserved()
+print(f"Allocated: {allocated / (1024**2):.2f} MB")
+print(f"Reserved: {reserved / (1024**2):.2f} MB")
+
+# Clear cache
+paddle.mps.empty_cache()
+
+# Track peak memory
+max_allocated = paddle.mps.max_memory_allocated()
+print(f"Peak allocated: {max_allocated / (1024**2):.2f} MB")
+
+# Reset peak statistics
+paddle.mps.reset_max_memory_allocated()
+```
+
+### Operator Examples
+
+```python
+import paddle
+import numpy as np
+
+paddle.mps.set_device(0)
+
+# Elementwise operations
+x = paddle.to_tensor([1.0, 2.0, 3.0], place='mps')
+y = paddle.to_tensor([4.0, 5.0, 6.0], place='mps')
+
+# Addition
+z = paddle.add(x, y)  # or z = x + y
+
+# Multiplication
+w = paddle.multiply(x, y)  # or w = x * y
+
+# Unary operations
+abs_x = paddle.abs(x)
+exp_x = paddle.exp(x)
+log_x = paddle.log(x + 1.0)  # Add 1 to avoid log(0)
+sqrt_x = paddle.sqrt(x)
+
+# Activation functions
+relu_x = paddle.nn.functional.relu(x)
+sigmoid_x = paddle.nn.functional.sigmoid(x)
+```
+
+## Implemented Operators
+
+### Elementwise Binary Operations
+
+All elementwise binary operations support broadcasting:
+
+| Operator | Function | MPSGraph Method |
+|----------|----------|-----------------|
+| `add` | `paddle.add(x, y)` | `additionWithPrimaryTensor:secondaryTensor:` |
+| `multiply` | `paddle.multiply(x, y)` | `multiplicationWithPrimaryTensor:secondaryTensor:` |
+| `subtract` | `paddle.subtract(x, y)` | `subtractionWithPrimaryTensor:secondaryTensor:` |
+| `divide` | `paddle.divide(x, y)` | `divisionWithPrimaryTensor:secondaryTensor:` |
+
+### Unary Operations
+
+| Operator | Function | MPSGraph Method |
+|----------|----------|-----------------|
+| `abs` | `paddle.abs(x)` | `absoluteWithTensor:` |
+| `exp` | `paddle.exp(x)` | `exponentWithTensor:` |
+| `log` | `paddle.log(x)` | `logarithmWithTensor:` |
+| `sqrt` | `paddle.sqrt(x)` | `squareRootWithTensor:` |
+| `relu` | `paddle.nn.functional.relu(x)` | `maximumWithPrimaryTensor:secondaryTensor:` |
+| `sigmoid` | `paddle.nn.functional.sigmoid(x)` | Composite (exp, division) |
+
+## Architecture
+
+### Core Components
+
+#### 1. MPS Backend (`paddle/phi/backends/mps/`)
+
+- **`mps_info.h/mm`**: Device information, device management, memory operations
+- **`mps_context.h/mm`**: Device context for MPS operations
+- **`mps_device.h`**: MPS device abstraction
+
+#### 2. Memory Management (`paddle/phi/core/memory/`)
+
+- **`mps_allocator.h/mm`**: Custom allocator for MPS memory using `MTLBuffer`
+- **`allocator_facade.cc`**: Allocator initialization and management
+- **`memcpy.cc`**: Memory copy operations between CPU and MPS
+
+#### 3. Kernels (`paddle/phi/kernels/mps/`)
+
+- **Elementwise kernels**: `elementwise_add_kernel.mm`, `elementwise_multiply_kernel.mm`, etc.
+- **Unary kernels**: `abs_kernel.mm`, `exp_kernel.mm`, `log_kernel.mm`, etc.
+- **`mps_utils.h/mm`**: Utility functions for MPSGraph operations
+
+#### 4. Python API (`python/paddle/`)
+
+- **`paddle/mps/__init__.py`**: MPS-specific Python API
+- **`paddle/base/framework.py`**: `is_compiled_with_mps()` function
+- **`paddle/device/__init__.py`**: Device management functions
+
+### Design Decisions
+
+1. **MPSGraph API**: All operations use MPSGraph, Apple's high-level graph API, which provides:
+   - Automatic kernel compilation and optimization
+   - Efficient memory management
+   - Support for complex operations
+
+2. **Unified Memory**: Leverages Apple Silicon's unified memory architecture, allowing:
+   - Zero-copy operations in some cases
+   - Simplified memory management
+   - Better performance for CPU-GPU transfers
+
+3. **PyTorch-style API**: The Python API follows PyTorch's MPS API design for familiarity:
+   ```python
+   # PyTorch style
+   torch.mps.is_available()
+   torch.mps.set_device(0)
+   
+   # PaddlePaddle style (same pattern)
+   paddle.mps.is_available()
+   paddle.mps.set_device(0)
+   ```
+
+4. **Lazy Module Loading**: The `paddle.mps` module uses lazy loading to avoid import errors if MPS is not compiled:
+   ```python
+   # This works even if paddle.mps module doesn't exist yet
+   import paddle
+   if paddle.mps.is_available():  # Lazy loaded
+       ...
+   ```
+
+## Testing
+
+### Quick Test
+
+Run the basic availability test:
+
+```bash
+python test_mps_availability.py
+```
+
+### Elementwise Operations Test
+
+Test elementwise binary operations:
+
+```bash
+python test_mps_kernels_quick.py
+```
+
+Or run the comprehensive test:
+
+```bash
+python test/test_mps_kernels_comprehensive.py
+```
+
+### Unary Operations Test
+
+Test unary operations:
+
+```bash
+python test_mps_unary_operators.py
+```
+
+### Unit Tests
+
+Run the unittest-based tests:
+
+```bash
+python -m pytest test/test_mps_elementwise_kernels.py -v
+```
+
+### Test Output Example
+
+```
+============================================================
+Quick MPS Kernel Test
+============================================================
+✓ PaddlePaddle imported
+✓ MPS available, device set to 0
+
+============================================================
+Testing Operations
+============================================================
+
+Add (same shape):
+  ✓ Pass (max diff: 1.19e-07)
+
+Multiply (same shape):
+  ✓ Pass (max diff: 2.38e-07)
+
+...
+```
+
+## Known Limitations
+
+1. **Data Types**: Currently only `float32` is supported. Support for other dtypes (float16, int32, etc.) is planned.
+
+2. **Operator Coverage**: Only basic elementwise and unary operations are implemented. More operators (convolution, matrix multiplication, reductions, etc.) are planned.
+
+3. **Gradient Support**: Backward passes (gradients) are not yet implemented for MPS operators.
+
+4. **Multi-device**: Only single device (device 0) is currently supported, though the infrastructure for multi-device is in place.
+
+5. **macOS Version**: Requires macOS 12.0 or later for MPSGraph support.
+
+## Performance Considerations
+
+- **First Run**: The first execution of an operator may be slower due to MPSGraph compilation. Subsequent runs use the cached compiled graph.
+
+- **Memory**: MPS uses unified memory, so memory usage is shared between CPU and GPU. Monitor memory usage with `paddle.mps.memory_allocated()`.
+
+- **Synchronization**: MPS operations are synchronous by default. The `paddle.mps.synchronize()` function is provided for API compatibility but is a no-op.
+
+## Contributing
+
+Contributions are welcome! Areas where contributions would be particularly valuable:
+
+1. **Additional Operators**: Implement more operators (conv, matmul, reductions, etc.)
+2. **Gradient Support**: Add backward pass implementations
+3. **Performance Optimization**: Optimize existing kernels
+4. **Testing**: Add more comprehensive tests
+5. **Documentation**: Improve documentation and examples
+
+### Adding a New Operator
+
+To add a new MPS operator:
+
+1. Create a kernel file in `paddle/phi/kernels/mps/` (e.g., `new_op_kernel.mm`)
+2. Implement the kernel using MPSGraph API
+3. Register the kernel with `PD_REGISTER_KERNEL`
+4. Add tests in the test directory
+5. Update this README
+
+Example template:
+
+```cpp
+// paddle/phi/kernels/mps/new_op_kernel.mm
+#ifdef PADDLE_WITH_MPS
+
+#include "paddle/phi/kernels/new_op_kernel.h"
+#include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
+#include "paddle/phi/kernels/mps/mps_utils.h"
+
+namespace phi {
+
+template <typename T>
+void NewOpKernelImpl(const MPSContext& dev_ctx,
+                    const DenseTensor& x,
+                    DenseTensor* out) {
+  @autoreleasepool {
+    MPSGraph* graph = backends::mps::GetMPSGraph(dev_ctx);
+    MPSGraphTensor* x_tensor = backends::mps::CreateMPSGraphTensorWithShape(
+        graph, x, "x");
+    
+    // Implement operation using MPSGraph
+    MPSGraphTensor* result_tensor = [graph ...];
+    
+    // Execute graph (see existing kernels for pattern)
+    ...
+  }
+}
+
+template <typename T, typename Context>
+void NewOpKernel(const Context& dev_ctx,
+                 const DenseTensor& x,
+                 DenseTensor* out) {
+  const auto* mps_ctx = dynamic_cast<const MPSContext*>(&dev_ctx);
+  if (mps_ctx != nullptr) {
+    NewOpKernelImpl<T>(*mps_ctx, x, out);
+  } else {
+    PADDLE_THROW(common::errors::InvalidArgument(
+        "Expected MPSContext but got different context type"));
+  }
+}
+
+}  // namespace phi
+
+PD_REGISTER_KERNEL(new_op,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::NewOpKernel,
+                   float) {}
+
+#endif  // PADDLE_WITH_MPS
+```
+
+## References
+
+- [Apple Metal Performance Shaders Documentation](https://developer.apple.com/documentation/metalperformanceshaders)
+- [MPSGraph API Reference](https://developer.apple.com/documentation/metalperformanceshadersgraph)
+- [PyTorch MPS Backend](https://pytorch.org/docs/stable/notes/mps.html)
+
+## License
+
+This implementation follows the same license as PaddlePaddle (Apache 2.0).
+
+## Acknowledgments
+
+This implementation was inspired by PyTorch's MPS backend and follows similar design patterns for consistency and familiarity.
+
+---
+
+**Note**: This is an active development project. Features and APIs may change. Please report issues and contribute improvements!

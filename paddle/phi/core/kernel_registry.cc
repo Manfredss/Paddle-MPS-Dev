@@ -42,6 +42,9 @@ void SetKernelArgsDef(const std::vector<std::type_index>& args_type,
 #elif defined(PADDLE_WITH_XPU) && defined(PADDLE_WITH_XPU_KP)
           || arg_type == std::type_index(typeid(const KPSContext&))
 #endif
+#ifdef PADDLE_WITH_MPS
+        || arg_type == std::type_index(typeid(const MPSContext&))
+#endif
 #if defined(PADDLE_WITH_CUSTOM_DEVICE)
         || arg_type == std::type_index(typeid(const CustomContext&))) {
 #else

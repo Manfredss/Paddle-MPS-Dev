@@ -27,6 +27,9 @@ enum DeviceType {
   CUDA = 1,
   XPU = 3,
   IPU = 4,
+#ifdef PADDLE_WITH_MPS
+  MPS = 5,
+#endif
   CUSTOM_DEVICE = 6,
 
   MAX_DEVICE_TYPES = 7,
@@ -38,6 +41,9 @@ constexpr DeviceType kCPU = DeviceType::CPU;
 constexpr DeviceType kCUDA = DeviceType::CUDA;
 constexpr DeviceType kXPU = DeviceType::XPU;
 constexpr DeviceType kIPU = DeviceType::IPU;
+#ifdef PADDLE_WITH_MPS
+constexpr DeviceType kMPS = DeviceType::MPS;
+#endif
 constexpr DeviceType kCUSTOM_DEVICE = DeviceType::CUSTOM_DEVICE;
 
 using DeviceContext = phi::DeviceContext;

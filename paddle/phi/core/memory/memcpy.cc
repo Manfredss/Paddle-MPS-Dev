@@ -29,6 +29,11 @@ limitations under the License. */
 #include "xpu/runtime_ex.h"
 #endif
 
+#ifdef PADDLE_WITH_MPS
+#include "paddle/phi/backends/mps/mps_info.h"
+#include "paddle/phi/backends/mps/mps_context.h"
+#endif
+
 #include "paddle/common/flags.h"
 
 COMMON_DECLARE_bool(use_default_stream);
@@ -182,6 +187,60 @@ void Copy<phi::Place, phi::IPUPlace>(phi::Place dst_place,
     phi::IPUPlace place_dst(dst_place.GetDeviceId());
     return Copy(place_dst, dst, src_place, src, num);
   }
+}
+#endif
+
+#ifdef PADDLE_WITH_MPS
+template <>
+PADDLE_API void Copy<phi::MPSPlace, phi::CPUPlace>(phi::MPSPlace dst_place,
+                                        void* dst,
+                                        phi::CPUPlace src_place,
+                                        const void* src,
+                                        size_t num) {
+  if (UNLIKELY(num == 0)) return;
+  const auto* dev_ctx =
+      phi::DeviceContextPool::Instance().GetByPlace(dst_place);
+  const auto* mps_ctx = dynamic_cast<const phi::MPSContext*>(dev_ctx);
+  PADDLE_ENFORCE_NOT_NULL(
+      mps_ctx,
+      common::errors::InvalidArgument(
+          "Failed to dynamic_cast dev_ctx into phi::MPSContext."));
+  phi::backends::mps::MemcpySyncH2D(dst, src, num, dst_place, *mps_ctx);
+}
+
+template <>
+PADDLE_API void Copy<phi::CPUPlace, phi::MPSPlace>(phi::CPUPlace dst_place,
+                                        void* dst,
+                                        phi::MPSPlace src_place,
+                                        const void* src,
+                                        size_t num) {
+  if (UNLIKELY(num == 0)) return;
+  const auto* dev_ctx =
+      phi::DeviceContextPool::Instance().GetByPlace(src_place);
+  const auto* mps_ctx = dynamic_cast<const phi::MPSContext*>(dev_ctx);
+  PADDLE_ENFORCE_NOT_NULL(
+      mps_ctx,
+      common::errors::InvalidArgument(
+          "Failed to dynamic_cast dev_ctx into phi::MPSContext."));
+  phi::backends::mps::MemcpySyncD2H(dst, src, num, src_place, *mps_ctx);
+}
+
+template <>
+PADDLE_API void Copy<phi::MPSPlace, phi::MPSPlace>(phi::MPSPlace dst_place,
+                                        void* dst,
+                                        phi::MPSPlace src_place,
+                                        const void* src,
+                                        size_t num) {
+  if (UNLIKELY(num == 0)) return;
+  const auto* dev_ctx =
+      phi::DeviceContextPool::Instance().GetByPlace(dst_place);
+  const auto* mps_ctx = dynamic_cast<const phi::MPSContext*>(dev_ctx);
+  PADDLE_ENFORCE_NOT_NULL(
+      mps_ctx,
+      common::errors::InvalidArgument(
+          "Failed to dynamic_cast dev_ctx into phi::MPSContext."));
+  phi::backends::mps::MemcpySyncD2D(
+      dst, dst_place, src, src_place, num, *mps_ctx);
 }
 #endif
 
@@ -1079,6 +1138,24 @@ PADDLE_API void Copy<phi::Place, phi::Place>(phi::Place dst_place,
     phi::CustomPlace place_dst(dst_place.GetDeviceType(),
                                dst_place.GetDeviceId());
     return Copy(place_dst, dst, place_src, src, num, nullptr);
+  }
+#endif
+#ifdef PADDLE_WITH_MPS
+  else if (src_place.GetType() == phi::AllocationType::CPU &&  // NOLINT
+           dst_place.GetType() == phi::AllocationType::MPS) {
+    phi::MPSPlace place_dst(dst_place.GetDeviceId());
+    phi::CPUPlace place_src;
+    return Copy(place_dst, dst, place_src, src, num);
+  } else if (src_place.GetType() == phi::AllocationType::MPS &&
+             dst_place.GetType() == phi::AllocationType::CPU) {
+    phi::MPSPlace place_src(src_place.GetDeviceId());
+    phi::CPUPlace place_dst;
+    return Copy(place_dst, dst, place_src, src, num);
+  } else if (src_place.GetType() == phi::AllocationType::MPS &&
+             dst_place.GetType() == phi::AllocationType::MPS) {
+    phi::MPSPlace place_src(src_place.GetDeviceId());
+    phi::MPSPlace place_dst(dst_place.GetDeviceId());
+    return Copy(place_dst, dst, place_src, src, num);
   }
 #endif
   else {  // NOLINT

@@ -38,6 +38,10 @@ limitations under the License. */
 #include "paddle/phi/core/platform/device/xpu/xpu_info.h"
 #endif
 
+#ifdef PADDLE_WITH_MPS
+#include "paddle/phi/backends/mps/mps_info.h"
+#endif
+
 #ifdef WITH_WIN_DUMP_DBG
 #include <stdio.h>
 #include <time.h>
@@ -189,6 +193,15 @@ void InitDevices() {
       LOG(WARNING) << "Compiled with WITH_XPU, but no XPU found in runtime.";
     }
 #endif
+#ifdef PADDLE_WITH_MPS
+    try {
+      // use user specified MPS devices.
+      devices = phi::backends::mps::GetMPSSelectedDevices();
+    } catch (const std::exception &exp) {
+      LOG(WARNING)
+          << "Compiled with PADDLE_WITH_MPS, but no MPS found in runtime.";
+    }
+#endif
 #ifdef PADDLE_WITH_IPU
     try {
       // use user specified IPUs.
@@ -219,6 +232,9 @@ void InitDevices(const std::vector<int> devices) {
 #ifdef PADDLE_WITH_XPU
     places.emplace_back(phi::XPUPlace(device));
     places.emplace_back(phi::XPUPinnedPlace());
+#endif
+#ifdef PADDLE_WITH_MPS
+    places.emplace_back(phi::MPSPlace(device));
 #endif
 #ifdef PADDLE_WITH_IPU
     places.emplace_back(phi::IPUPlace(device));

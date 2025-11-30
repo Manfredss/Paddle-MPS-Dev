@@ -341,6 +341,10 @@ if(WITH_CUSTOM_DEVICE)
   set(cc_search_pattern ${cc_search_pattern} "custom/*.cc")
 endif()
 
+if(WITH_MPS)
+  set(cc_search_pattern ${cc_search_pattern} "mps/*.mm")
+endif()
+
 file(
   GLOB kernel_cc
   RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -410,6 +414,20 @@ if(WITH_XPU)
   kernel_declare("${kernel_xpu}")
   kernel_declare("${kernel_xpu_kps}")
   kernel_declare("${kernel_xpu_cc}")
+endif()
+
+if(WITH_MPS)
+  file(
+    GLOB kernel_mps
+    RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "mps/*.mm")
+  collect_srcs(kernels_srcs SRCS ${kernel_mps})
+  kernel_declare("${kernel_mps}")
+  # Remove MPS files from kernel_cc to avoid duplicate declarations
+  # since they were already declared above
+  foreach(mps_file ${kernel_mps})
+    list(REMOVE_ITEM kernel_cc ${mps_file})
+  endforeach()
 endif()
 
 collect_srcs(kernels_srcs SRCS ${kernel_cc})

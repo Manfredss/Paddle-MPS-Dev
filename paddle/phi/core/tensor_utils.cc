@@ -78,6 +78,10 @@ void Copy(const Context& dev_ctx,
     dst_ptr = dev_ctx.Alloc(
         dst, src.dtype(), 0, dst_place.GetType() == AllocationType::XPUPINNED);
 #endif
+#ifdef PADDLE_WITH_MPS
+  } else if (dst_place.GetType() == AllocationType::MPS) {
+    dst_ptr = dev_ctx.Alloc(dst, src.dtype());
+#endif
 #ifdef PADDLE_WITH_CUSTOM_DEVICE
   } else if (dst_place.GetType() == AllocationType::CUSTOM) {
     dst_ptr = dev_ctx.Alloc(dst, src.dtype());
@@ -89,6 +93,9 @@ void Copy(const Context& dev_ctx,
     return;
   }
 
+  // Only check place match if the tensor is already initialized (has allocation)
+  // For uninitialized tensors, the place will be set correctly during allocation
+  if (dst->has_allocation()) {
   PADDLE_ENFORCE_EQ(
       dst->place(),
       dst_place,
@@ -97,6 +104,7 @@ void Copy(const Context& dev_ctx,
           "place is %s, dst_place is %s.",
           dst->place(),
           dst_place));
+  }
 
   if (src_ptr == dst_ptr && src_place == dst_place) {
     VLOG(3) << "Skip copy the same data async from " << src_place << " to "
@@ -276,6 +284,25 @@ void Copy(const Context& dev_ctx,
             ? nullptr
             : reinterpret_cast<const phi::CustomContext&>(dev_ctx).stream();
     memory_utils::Copy(dst_place, dst_ptr, src_place, src_ptr, size, stream);
+#endif
+#ifdef PADDLE_WITH_MPS
+  } else if (src_place.GetType() == AllocationType::CPU &&  // NOLINT
+             dst_place.GetType() == AllocationType::MPS) {
+    // CPU to MPS copy
+    memory_utils::Copy(dst_place, dst_ptr, src_place, src_ptr, size);
+  } else if (src_place.GetType() == AllocationType::MPS &&  // NOLINT
+             dst_place.GetType() == AllocationType::CPU) {
+    // MPS to CPU copy
+    memory_utils::Copy(dst_place, dst_ptr, src_place, src_ptr, size);
+  } else if (src_place.GetType() == AllocationType::MPS &&  // NOLINT
+             dst_place.GetType() == AllocationType::MPS) {
+    // MPS to MPS copy
+    if (src_ptr == dst_ptr) {
+      VLOG(3) << "Skip copy the same data async from " << src_place << " to "
+              << dst_place;
+      return;
+    }
+    memory_utils::Copy(dst_place, dst_ptr, src_place, src_ptr, size);
 #endif
   } else {
     PADDLE_THROW(errors::Unimplemented(

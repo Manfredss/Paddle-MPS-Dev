@@ -76,7 +76,7 @@ TEST_API phi::DeviceContext* DeviceContextPool::Get(const phi::Place& place) {
   if (it == ptr->end()) {
     PADDLE_THROW(common::errors::Unimplemented(
         "Place %s is not supported. Please check that your paddle compiles "
-        "with WITH_GPU, WITH_XPU or WITH_IPU option "
+        "with WITH_GPU, WITH_XPU, WITH_MPS or WITH_IPU option "
         "or check "
         "that your train process set the correct device id if you use "
         "Executor.",

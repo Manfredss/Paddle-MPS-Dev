@@ -326,6 +326,15 @@ class PADDLE_API Tensor final {
    */
   bool is_xpu_pinned() const;
 
+#ifdef PADDLE_WITH_MPS
+  /**
+   * @brief Determine whether the tensor device is MPS
+   *
+   * @return bool
+   */
+  bool is_mps() const;
+#endif
+
   /**
    * @brief Determine whether the tensor device is CustomDevice
    *

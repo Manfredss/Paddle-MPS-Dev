@@ -256,6 +256,7 @@ from .device import (  # noqa: F401
     is_compiled_with_custom_device,
     is_compiled_with_distribute,
     is_compiled_with_ipu,
+    is_compiled_with_mps,
     is_compiled_with_rocm,
     is_compiled_with_xpu,
     set_default_device,
@@ -268,6 +269,7 @@ from .framework import (  # noqa: F401
     CUDAPlace,
     CustomPlace,
     IPUPlace,
+    MPSPlace,
     ParamAttr,
     XPUPinnedPlace,
     XPUPlace,
@@ -1512,3 +1514,39 @@ if FLAGS_trace_api is not None and FLAGS_trace_api != "":
     api_path = FLAGS_trace_api.split(",")[0]
     save_config_path = FLAGS_trace_api.split(",")[1]
     start_api_tracer(api_path, save_config_path)
+
+# Enable lazy loading for mps module (must be at the end after all imports)
+import importlib
+import sys
+import types
+
+class _PaddleModule(types.ModuleType):
+    """Wrapper to enable lazy loading of submodules like paddle.mps"""
+    
+    def __getattr__(self, name: str):
+        # Try to lazy load mps module if it exists
+        if name == 'mps':
+            try:
+                mod = importlib.import_module(f'{self.__name__}.{name}')
+                # Cache it to avoid repeated imports
+                setattr(self, name, mod)
+                return mod
+            except (ModuleNotFoundError, ImportError) as e:
+                raise AttributeError(
+                    f"module '{self.__name__}' has no attribute '{name}'. "
+                    "Please rebuild and reinstall PaddlePaddle to include MPS support. "
+                    f"Original error: {e}"
+                )
+        # For other attributes, use default behavior
+        raise AttributeError(f"module '{self.__name__}' has no attribute '{name}'")
+
+# Replace the module with our wrapper to enable lazy loading
+# This must happen after all other imports and operations
+_original_module = sys.modules[__name__]
+_wrapped_module = _PaddleModule(__name__, _original_module.__doc__ or '')
+_wrapped_module.__dict__.update(_original_module.__dict__)
+# Preserve important module attributes
+_wrapped_module.__file__ = getattr(_original_module, '__file__', None)
+_wrapped_module.__path__ = getattr(_original_module, '__path__', None)
+_wrapped_module.__package__ = getattr(_original_module, '__package__', None)
+sys.modules[__name__] = _wrapped_module

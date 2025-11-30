@@ -43,6 +43,18 @@ void SetConstant<phi::XPUContext, T>::operator()(const phi::XPUContext& dev_ctx,
 }
 #endif
 
+#ifdef PADDLE_WITH_MPS
+template <typename T>
+void SetConstant<phi::MPSContext, T>::operator()(const phi::MPSContext& dev_ctx,
+                                                 phi::DenseTensor* tensor,
+                                                 T num) {
+  // MPS uses unified memory, so we can use std::fill directly
+  T* data = dev_ctx.template Alloc<T>(tensor);
+  int64_t numel = tensor->numel();
+  std::fill(data, data + numel, static_cast<T>(num));
+}
+#endif
+
 template <typename DeviceContext, typename T, int Rank>
 void Transpose<DeviceContext, T, Rank>::operator()(
     const DeviceContext& dev_ctx,

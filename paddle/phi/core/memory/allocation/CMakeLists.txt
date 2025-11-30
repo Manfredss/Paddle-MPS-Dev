@@ -53,4 +53,12 @@ if(WITH_XPU)
        stream_safe_xpu_allocator.cc)
 endif()
 
+if(WITH_MPS AND APPLE)
+  list(APPEND ALLOCATOR_SRCS mps_allocator.mm)
+  set_source_files_properties(mps_allocator.mm PROPERTIES
+    COMPILE_FLAGS "-x objective-c++"
+    LANGUAGE OBJCXX
+  )
+endif()
+
 collect_srcs(core_srcs SRCS ${ALLOCATOR_SRCS})

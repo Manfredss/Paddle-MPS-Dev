@@ -27,9 +27,16 @@ extern "C" {
 #define PADDLE_CUSTOM_RUNTIME_MINOR_VERSION 1
 #define PADDLE_CUSTOM_RUNTIME_PATCH_VERSION 1
 
+// Workaround for BOOL conflict with Objective-C
+// When compiling Objective-C++, Objective-C's BOOL type (typedef signed char BOOL)
+// conflicts with using BOOL as an enum value name. We use BOOL_TYPE instead.
 typedef enum {
   UNDEFINED = 0,
-  BOOL,
+#ifdef __OBJC__
+  BOOL_TYPE = 1,  // Use BOOL_TYPE to avoid conflict with Objective-C BOOL type
+#else
+  BOOL = 1,       // Use BOOL when not compiling Objective-C++
+#endif
   UINT8,
   UINT16,
   UINT32,

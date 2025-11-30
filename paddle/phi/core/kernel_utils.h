@@ -309,6 +309,9 @@ struct KernelImpl<Return (*)(DevCtx, Args...), kernel_fn> {
 #ifdef PADDLE_WITH_XPU
   PD_SPECIALIZE_KernelCallHelper_FOR_DEVICE_CONTEXT(XPUContext);
 #endif
+#ifdef PADDLE_WITH_MPS
+  PD_SPECIALIZE_KernelCallHelper_FOR_DEVICE_CONTEXT(MPSContext);
+#endif
 #ifdef PADDLE_WITH_CUSTOM_DEVICE
   PD_SPECIALIZE_KernelCallHelper_FOR_DEVICE_CONTEXT(CustomContext);
 #endif

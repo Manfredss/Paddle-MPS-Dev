@@ -252,7 +252,7 @@ static PyObject* tensor_method_numpy(TensorObject* self,
   phi::CPUPlace cpu_place;
 
   if (self->tensor.is_cpu() || self->tensor.is_gpu_pinned() ||
-      self->tensor.is_xpu_pinned()) {
+      self->tensor.is_xpu_pinned() || self->tensor.is_mps()) {
     eager_gil_scoped_release guard;
     phi::CPUPlace place;
     if (self->tensor.is_selected_rows()) {
@@ -267,11 +267,19 @@ static PyObject* tensor_method_numpy(TensorObject* self,
       cpu_tensor.ResetHolder(std::shared_ptr<phi::Allocation>(
           tmp_allocation_ptr.release(), tmp_allocation_ptr.get_deleter()));
       // deep copy
-      paddle::memory::Copy(place,
-                           cpu_tensor.Holder()->ptr(),
-                           place,
-                           dense_tensor->Holder()->ptr(),
-                           dense_tensor->Holder()->size());
+      if (self->tensor.is_mps()) {
+        paddle::memory::Copy(cpu_place,
+                             cpu_tensor.Holder()->ptr(),
+                             dense_tensor->place(),
+                             dense_tensor->Holder()->ptr(),
+                             dense_tensor->Holder()->size());
+      } else {
+        paddle::memory::Copy(place,
+                             cpu_tensor.Holder()->ptr(),
+                             place,
+                             dense_tensor->Holder()->ptr(),
+                             dense_tensor->Holder()->size());
+      }
     } else if (self->tensor.is_dist_tensor()) {
 #ifdef PADDLE_WITH_DISTRIBUTE
       VLOG(6) << "Getting DistTensor's numpy value";
@@ -286,11 +294,19 @@ static PyObject* tensor_method_numpy(TensorObject* self,
       cpu_tensor.ResetHolder(std::shared_ptr<phi::Allocation>(
           tmp_allocation_ptr.release(), tmp_allocation_ptr.get_deleter()));
       // deep copy
-      paddle::memory::Copy(place,
-                           cpu_tensor.Holder()->ptr(),
-                           place,
-                           dense_tensor.Holder()->ptr(),
-                           dense_tensor.Holder()->size());
+      if (self->tensor.is_mps()) {
+        paddle::memory::Copy(cpu_place,
+                             cpu_tensor.Holder()->ptr(),
+                             dense_tensor.place(),
+                             dense_tensor.Holder()->ptr(),
+                             dense_tensor.Holder()->size());
+      } else {
+        paddle::memory::Copy(place,
+                             cpu_tensor.Holder()->ptr(),
+                             place,
+                             dense_tensor.Holder()->ptr(),
+                             dense_tensor.Holder()->size());
+      }
 #else
       PADDLE_THROW(
           common::errors::Unavailable("The `numpy()` method of (Dist)Tensor "
@@ -309,11 +325,21 @@ static PyObject* tensor_method_numpy(TensorObject* self,
       cpu_tensor.ResetHolder(std::shared_ptr<phi::Allocation>(
           tmp_allocation_ptr.release(), tmp_allocation_ptr.get_deleter()));
       // deep copy
-      paddle::memory::Copy(place,
-                           cpu_tensor.Holder()->ptr(),
-                           place,
-                           dense_tensor->Holder()->ptr(),
-                           dense_tensor->Holder()->size());
+      if (self->tensor.is_mps()) {
+        // For MPS, copy from MPS place to CPU place
+        paddle::memory::Copy(cpu_place,
+                             cpu_tensor.Holder()->ptr(),
+                             dense_tensor->place(),
+                             dense_tensor->Holder()->ptr(),
+                             dense_tensor->Holder()->size());
+      } else {
+        // For CPU/pinned, copy within same place
+        paddle::memory::Copy(place,
+                             cpu_tensor.Holder()->ptr(),
+                             place,
+                             dense_tensor->Holder()->ptr(),
+                             dense_tensor->Holder()->size());
+      }
     }
 
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)

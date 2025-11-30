@@ -22,6 +22,9 @@ limitations under the License. */
 #include "paddle/phi/backends/device_manager.h"
 #include "paddle/phi/backends/gpu/gpu_info.h"
 #include "paddle/phi/backends/xpu/xpu_info.h"
+#ifdef PADDLE_WITH_MPS
+#include "paddle/phi/backends/mps/mps_info.h"
+#endif
 
 namespace phi {
 
@@ -41,6 +44,10 @@ const char *AllocationTypeStr(AllocationType type) {
       return "xpu_pinned";
     case AllocationType::IPU:
       return "ipu";
+#ifdef PADDLE_WITH_MPS
+    case AllocationType::MPS:
+      return "mps";
+#endif
     case AllocationType::CUSTOM:
       return "custom_device";
     default:
@@ -187,6 +194,12 @@ bool is_ipu_place(const Place &p) {
   return p.GetType() == phi::AllocationType::IPU;
 }
 
+#ifdef PADDLE_WITH_MPS
+bool is_mps_place(const Place &p) {
+  return p.GetType() == phi::AllocationType::MPS;
+}
+#endif
+
 TEST_API bool is_cpu_place(const Place &p) {
   return p.GetType() == phi::AllocationType::CPU;
 }
@@ -210,12 +223,18 @@ bool is_custom_place(const Place &p) {
 
 bool is_accelerat_place(const Place &p) {
   return is_gpu_place(p) || is_xpu_place(p) || is_ipu_place(p) ||
+#ifdef PADDLE_WITH_MPS
+         is_mps_place(p) ||
+#endif
          is_custom_place(p);
 }
 
 bool is_accelerat_allocation_type(AllocationType type) {
   return type == phi::AllocationType::GPU || type == phi::AllocationType::XPU ||
          type == phi::AllocationType::IPU ||
+#ifdef PADDLE_WITH_MPS
+         type == phi::AllocationType::MPS ||
+#endif
          type == phi::AllocationType::CUSTOM;
 }
 
@@ -312,6 +331,13 @@ phi::XPUPlace DefaultXPUPlace() {
       0);
 #endif
 }
+
+#ifdef PADDLE_WITH_MPS
+phi::MPSPlace DefaultMPSPlace() {
+  return phi::MPSPlace(
+      phi::backends::mps::GetMPSCurrentDeviceId());
+}
+#endif
 
 phi::CustomPlace DefaultCustomPlace() {
 #ifdef PADDLE_WITH_CUSTOM_DEVICE

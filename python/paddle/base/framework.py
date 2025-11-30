@@ -996,6 +996,22 @@ def is_compiled_with_cuda() -> bool:
     return core.is_compiled_with_cuda()
 
 
+def is_compiled_with_mps() -> bool:
+    """
+    Whether this whl package can be used to run the model on MPS (Metal Performance Shaders).
+
+    Returns:
+        Bool: `True` if MPS is currently available, otherwise `False`.
+
+    Examples:
+        .. code-block:: python
+
+            >>> import paddle
+            >>> support_mps = paddle.is_compiled_with_mps()
+    """
+    return core.is_compiled_with_mps()
+
+
 def is_compiled_with_distribute() -> bool:
     """
     Whether this whl package can be used to run the model with distribute.
@@ -8382,6 +8398,21 @@ def _get_paddle_place(place):
         device_id = int(device_id)
         return core.IPUPlace(device_id)
 
+    # MPS
+    available_mps_place = re.match(r"mps:\d+", place)
+    if available_mps_place or place == "mps":
+        if not core.is_compiled_with_mps():
+            raise ValueError(
+                f"The device should not be {place}, since PaddlePaddle is "
+                "not compiled with MPS"
+            )
+        if place == "mps":
+            return core.MPSPlace(0)
+        else:
+            place_info_list = place.split(":", 1)
+            device_id = int(place_info_list[1])
+            return core.MPSPlace(device_id)
+
     place_info_list = place.split(":", 1)
     device_type = place_info_list[0]
     if device_type in core.get_all_custom_device_type():
@@ -8393,7 +8424,7 @@ def _get_paddle_place(place):
             return core.CustomPlace(device_type, device_id)
 
     raise ValueError(
-        f"Paddle supports CPUPlace, CUDAPlace, CUDAPinnedPlace, XPUPlace, XPUPinnedPlace, IPUPlace and CustomPlace, but received {place}."
+        f"Paddle supports CPUPlace, CUDAPlace, CUDAPinnedPlace, XPUPlace, XPUPinnedPlace, IPUPlace, MPSPlace and CustomPlace, but received {place}."
     )
 
 

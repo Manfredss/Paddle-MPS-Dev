@@ -38,6 +38,7 @@ enum class AllocationType : int8_t {
   XPU = 4,
   XPUPINNED = 5,
   IPU = 7,
+  MPS = 8,
   CUSTOM = 9,
 };
 
@@ -189,6 +190,18 @@ class IPUPlace : public Place {
       : Place(AllocationType::IPU, place.GetDeviceId()) {}
 };
 
+#ifdef PADDLE_WITH_MPS
+class MPSPlace : public Place {
+ public:
+  MPSPlace() : Place(AllocationType::MPS, 0) {}
+  explicit MPSPlace(int device_id) : Place(AllocationType::MPS, device_id) {}
+
+  MPSPlace(const MPSPlace&) = default;
+  MPSPlace(const Place& place)  // NOLINT
+      : Place(AllocationType::MPS, place.GetDeviceId()) {}
+};
+#endif
+
 class CustomPlace : public Place {
  public:
   CustomPlace() : Place(AllocationType::CUSTOM, 0, "") {}
@@ -224,6 +237,9 @@ class PlaceHelper {
 PADDLE_API bool is_gpu_place(const Place&);
 PADDLE_API bool is_xpu_place(const Place&);
 PADDLE_API bool is_ipu_place(const Place&);
+#ifdef PADDLE_WITH_MPS
+PADDLE_API bool is_mps_place(const Place&);
+#endif
 PADDLE_API bool is_cpu_place(const Place&);
 PADDLE_API bool is_pinned_place(const Place&);
 PADDLE_API bool is_cuda_pinned_place(const Place&);
@@ -285,7 +301,9 @@ PADDLE_API bool operator==(PlaceType place_type, const Place& place);
 PADDLE_API GPUPlace DefaultGPUPlace();
 
 PADDLE_API phi::XPUPlace DefaultXPUPlace();
-
+#ifdef PADDLE_WITH_MPS
+PADDLE_API phi::MPSPlace DefaultMPSPlace();
+#endif
 PADDLE_API phi::CustomPlace DefaultCustomPlace();
 
 }  // namespace paddle

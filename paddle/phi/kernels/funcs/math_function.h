@@ -73,6 +73,15 @@ struct SetConstant<phi::XPUContext, T> {
 };
 #endif
 
+#ifdef PADDLE_WITH_MPS
+template <typename T>
+struct SetConstant<phi::MPSContext, T> {
+  void operator()(const phi::MPSContext& dev_ctx,
+                  phi::DenseTensor* tensor,
+                  T num);
+};
+#endif
+
 template <typename Place>
 void set_constant_with_place(const phi::DeviceContext& dev_ctx,
                              phi::DenseTensor* tensor,

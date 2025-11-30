@@ -187,6 +187,12 @@ bool Tensor::is_xpu_pinned() const {
   return place().GetType() == phi::AllocationType::XPUPINNED;
 }
 
+#ifdef PADDLE_WITH_MPS
+bool Tensor::is_mps() const {
+  return place().GetType() == phi::AllocationType::MPS;
+}
+#endif
+
 bool Tensor::is_custom_device() const {
   return place().GetType() == phi::AllocationType::CUSTOM;
 }

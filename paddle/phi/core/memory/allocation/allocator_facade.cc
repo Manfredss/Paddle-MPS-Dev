@@ -66,6 +66,11 @@
 #include "paddle/phi/core/platform/device/xpu/xpu_info.h"
 #endif
 
+#ifdef PADDLE_WITH_MPS
+#include "paddle/phi/backends/mps/mps_info.h"
+#include "paddle/phi/core/memory/allocation/mps_allocator.h"
+#endif
+
 #ifdef PADDLE_WITH_IPU
 #include "paddle/fluid/platform/device/ipu/ipu_info.h"
 #endif
@@ -237,6 +242,11 @@ class AllocatorFacadePrivate {
         }
         InitNaiveBestFitXPUPinnedAllocator();
 #endif
+#ifdef PADDLE_WITH_MPS
+        for (int dev_id = 0; dev_id < phi::backends::mps::GetMPSDeviceCount(); ++dev_id) {
+          InitNaiveBestFitMPSAllocator(phi::MPSPlace(dev_id));
+        }
+#endif
 #ifdef PADDLE_WITH_CUSTOM_DEVICE
         auto device_types = phi::DeviceManager::GetAllCustomDeviceTypes();
         for (const auto& dev_type : device_types) {
@@ -380,13 +390,43 @@ class AllocatorFacadePrivate {
 
   inline const std::shared_ptr<Allocator>& GetAllocator(const phi::Place& place,
                                                         size_t size) {
-    const auto& allocators =
-        (size > 0 ? (UNLIKELY(FLAGS_use_system_allocator) ? system_allocators_
-                                                          : GetAllocatorMap())
-                  : zero_size_allocators_);
-    auto iter = allocators.find(place);
+    // Get the appropriate allocator map (non-const for potential modification)
+    AllocatorMap* allocators_map = nullptr;
+    if (size > 0) {
+      if (UNLIKELY(FLAGS_use_system_allocator)) {
+        allocators_map = &system_allocators_;
+      } else {
+        allocators_map = &allocators_;
+      }
+    } else {
+      allocators_map = &zero_size_allocators_;
+    }
+    
+    auto iter = allocators_map->find(place);
+    
+    // Fallback: If allocator not found and it's an MPS place, try to initialize it
+    if (iter == allocators_map->end()) {
+#ifdef PADDLE_WITH_MPS
+      if (phi::is_mps_place(place)) {
+        phi::MPSPlace mps_place(place.GetDeviceId());
+        // Ensure system allocator is initialized
+        InitSystemAllocators();
+        // Initialize the naive best fit allocator (adds to allocators_)
+        InitNaiveBestFitMPSAllocator(mps_place);
+        // If we're using system allocator, also ensure it's in system_allocators_
+        if (UNLIKELY(FLAGS_use_system_allocator) && size > 0) {
+          if (system_allocators_.find(place) == system_allocators_.end()) {
+            system_allocators_[mps_place] = CreateMPSAllocator(mps_place);
+          }
+        }
+        // Try to find again after initialization
+        iter = allocators_map->find(place);
+      }
+#endif
+    }
+    
     PADDLE_ENFORCE_NE(iter,
-                      allocators.end(),
+                      allocators_map->end(),
                       common::errors::NotFound(
                           "No allocator found for the place, %s", place));
     VLOG(7) << "[GetAllocator]"
@@ -1267,6 +1307,22 @@ class AllocatorFacadePrivate {
   std::shared_ptr<Allocator> CreateXPUAllocator(phi::XPUPlace p) {
     return std::make_shared<XPUAllocator>(p);
   }
+#endif
+
+#ifdef PADDLE_WITH_MPS
+  void InitNaiveBestFitMPSAllocator(phi::MPSPlace p) {
+    // Ensure system allocator is initialized first
+    InitSystemAllocators();
+    allocators_[p] = std::make_shared<NaiveBestFitAllocator>(p);
+  }
+
+  // Create a new MPSAllocator for the given device
+  std::shared_ptr<Allocator> CreateMPSAllocator(phi::MPSPlace p) {
+    return std::make_shared<MPSAllocator>(p);
+  }
+#endif
+
+#ifdef PADDLE_WITH_XPU
 
   void InitStreamSafeXPUAllocator(phi::XPUPlace p, XPUStream stream) {
     PADDLE_ENFORCE_EQ(
@@ -1466,6 +1522,13 @@ class AllocatorFacadePrivate {
       system_allocators_[p] = CreateXPUAllocator(p);
     }
 #endif
+#ifdef PADDLE_WITH_MPS
+    int device_count = phi::backends::mps::GetMPSDeviceCount();
+    for (int i = 0; i < device_count; ++i) {
+      phi::MPSPlace p(i);
+      system_allocators_[p] = CreateMPSAllocator(p);
+    }
+#endif
 #ifdef PADDLE_WITH_IPU
     int device_count = platform::GetIPUDeviceCount();
     for (int i = 0; i < device_count; ++i) {
@@ -1497,6 +1560,12 @@ class AllocatorFacadePrivate {
     if (!zero_size_allocators_.empty()) return;
     std::vector<phi::Place> places;
     places.emplace_back(phi::CPUPlace());
+#ifdef PADDLE_WITH_MPS
+    int mps_device_count = phi::backends::mps::GetMPSDeviceCount();
+    for (int i = 0; i < mps_device_count; ++i) {
+      places.emplace_back(phi::MPSPlace(i));
+    }
+#endif
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
     int device_count = platform::GetGPUDeviceCount();
     for (int dev_id = 0; dev_id < device_count; ++dev_id) {

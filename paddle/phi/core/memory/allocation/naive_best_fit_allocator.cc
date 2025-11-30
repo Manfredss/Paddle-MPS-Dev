@@ -19,6 +19,7 @@
 #include "glog/logging.h"
 #include "paddle/phi/common/place.h"
 #include "paddle/phi/core/enforce.h"
+#include "paddle/phi/core/memory/allocation/allocator_facade.h"
 #include "paddle/phi/core/memory/allocation/buddy_allocator.h"
 #include "paddle/phi/core/memory/allocation/system_allocator.h"
 #include "paddle/phi/core/platform/device/device_wrapper.h"
@@ -29,6 +30,10 @@
 #include "paddle/utils/string/split.h"
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
 #include "paddle/phi/core/platform/cuda_device_guard.h"
+#endif
+#ifdef PADDLE_WITH_MPS
+#include "paddle/phi/core/memory/allocation/mps_allocator.h"
+#include "paddle/phi/backends/mps/mps_info.h"
 #endif
 #include "paddle/common/flags.h"
 PHI_DEFINE_EXPORTED_bool(
@@ -63,6 +68,9 @@ struct Usage {
   size_t operator()(const phi::GPUPinnedPlace &cuda_pinned) const;
   size_t operator()(const phi::XPUPlace &xpu) const;
   size_t operator()(const phi::XPUPinnedPlace &xpu_pinned) const;
+#ifdef PADDLE_WITH_MPS
+  size_t operator()(const phi::MPSPlace &mps) const;
+#endif
 };
 
 size_t memory_usage(const phi::Place &p);
@@ -699,6 +707,122 @@ size_t Usage::operator()(const phi::XPUPinnedPlace &xpu_pinned) const {
       "'XPUPinnedPlace' is not supported in CPU only device."));
 #endif
 }
+
+#ifdef PADDLE_WITH_MPS
+// MPS SystemAllocator that wraps MPSAllocator
+// Define outside legacy namespace to avoid namespace resolution issues
+}  // namespace paddle::memory::legacy
+
+namespace paddle::memory::allocation {
+class MPSSystemAllocator : public detail::SystemAllocator {
+ public:
+  explicit MPSSystemAllocator(int device_id) : device_id_(device_id) {
+    place_ = ::phi::MPSPlace(device_id);
+    allocator_ = std::make_shared<paddle::memory::allocation::MPSAllocator>(place_);
+  }
+
+  void* Alloc(size_t* index, size_t size) override {
+    *index = 0;  // MPS doesn't use index
+    auto allocation = allocator_->Allocate(size);
+    return allocation ? allocation->ptr() : nullptr;
+  }
+
+  void Free(void* p, size_t size, size_t index) override {
+    ::phi::Allocation temp_allocation(p, size, place_);
+    allocator_->Free(&temp_allocation);
+  }
+
+  bool UseGpu() const override { return true; }
+
+ private:
+  int device_id_;
+  ::phi::MPSPlace place_;
+  std::shared_ptr<paddle::memory::allocation::MPSAllocator> allocator_;
+};
+
+// For MPS - use buddy allocator with MPS system allocator
+// Use mutex-based initialization since std::once_flag is not movable
+detail::BuddyAllocator *GetMPSBuddyAllocator(int device_id) {
+  static std::mutex init_mutex;
+  static std::vector<detail::BuddyAllocator *> allocators;
+  static bool initialized = false;
+  
+  // Initialize the vector size once
+  {
+    std::lock_guard<std::mutex> lock(init_mutex);
+    if (!initialized) {
+      int device_count = ::phi::backends::mps::GetMPSDeviceCount();
+      allocators.resize(device_count, nullptr);
+      initialized = true;
+    }
+  }
+  
+  PADDLE_ENFORCE_LT(
+      device_id, static_cast<int>(allocators.size()),
+      common::errors::InvalidArgument(
+          "MPS device id %d is out of range [0, %d)", device_id,
+          static_cast<int>(allocators.size())));
+  
+  // Initialize the specific device allocator if needed
+  if (allocators[device_id] == nullptr) {
+    std::lock_guard<std::mutex> lock(init_mutex);
+    // Double-check after acquiring lock
+    if (allocators[device_id] == nullptr) {
+      allocators[device_id] = new detail::BuddyAllocator(
+          std::unique_ptr<detail::SystemAllocator>(
+              new MPSSystemAllocator(device_id)),
+          ::phi::backends::cpu::CpuMinChunkSize(),
+          ::phi::backends::cpu::CpuMaxChunkSize());
+    }
+  }
+  
+  return allocators[device_id];
+}
+}  // namespace paddle::memory::allocation
+
+namespace paddle::memory::legacy {
+template <>
+void *Alloc<::phi::MPSPlace>(const ::phi::MPSPlace &place, size_t size) {
+  VLOG(10) << "Allocate " << size << " bytes on " << ::phi::Place(place);
+  auto *buddy_allocator = paddle::memory::allocation::GetMPSBuddyAllocator(place.GetDeviceId());
+  void *ptr = buddy_allocator->Alloc(size);
+  if (ptr == nullptr) {
+    PADDLE_THROW(common::errors::ResourceExhausted(
+        "Cannot allocate %s in MPS %d.", string::HumanReadableSize(size),
+        place.GetDeviceId()));
+  }
+  if (FLAGS_init_allocated_mem) {
+    memset(ptr, 0xEF, size);
+  }
+  VLOG(10) << "  pointer=" << ptr;
+  return ptr;
+}
+
+template <>
+void Free<::phi::MPSPlace>(const ::phi::MPSPlace &place, void *p, size_t size) {
+  VLOG(10) << "Free " << size << " bytes on " << ::phi::Place(place);
+  VLOG(10) << "Free pointer=" << p << " on " << ::phi::Place(place);
+  auto *buddy_allocator = paddle::memory::allocation::GetMPSBuddyAllocator(place.GetDeviceId());
+  buddy_allocator->Free(p);
+}
+
+template <>
+uint64_t Release<::phi::MPSPlace>(const ::phi::MPSPlace &place) {
+  VLOG(10) << "Release on " << ::phi::Place(place);
+  auto *buddy_allocator = paddle::memory::allocation::GetMPSBuddyAllocator(place.GetDeviceId());
+  return buddy_allocator->Release();
+}
+
+template <>
+size_t Used<::phi::MPSPlace>(const ::phi::MPSPlace &place) {
+  auto *buddy_allocator = paddle::memory::allocation::GetMPSBuddyAllocator(place.GetDeviceId());
+  return buddy_allocator->Used();
+}
+
+size_t Usage::operator()(const ::phi::MPSPlace &mps) const {
+  return Used(mps);
+}
+#endif
 
 }  // namespace paddle::memory::legacy
 

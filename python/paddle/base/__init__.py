@@ -69,6 +69,7 @@ from .core import (  # noqa: F401
     DenseTensor,
     DenseTensorArray,
     IPUPlace,
+    MPSPlace,
     Scope,
     XPUPinnedPlace,
     XPUPlace,

@@ -77,6 +77,24 @@ template struct SetConstant<phi::XPUContext, phi::complex64>;
 template struct SetConstant<phi::XPUContext, phi::complex128>;
 #endif
 
+#ifdef PADDLE_WITH_MPS
+template struct SetConstant<phi::MPSContext, phi::float16>;
+template struct SetConstant<phi::MPSContext, phi::bfloat16>;
+template struct SetConstant<phi::MPSContext, float>;
+template struct SetConstant<phi::MPSContext, double>;
+template struct SetConstant<phi::MPSContext, uint8_t>;
+template struct SetConstant<phi::MPSContext, int8_t>;
+template struct SetConstant<phi::MPSContext, int16_t>;
+template struct SetConstant<phi::MPSContext, int>;
+template struct SetConstant<phi::MPSContext, int64_t>;
+template struct SetConstant<phi::MPSContext, bool>;
+template struct SetConstant<phi::MPSContext, uint16_t>;
+template struct SetConstant<phi::MPSContext, uint32_t>;
+template struct SetConstant<phi::MPSContext, uint64_t>;
+template struct SetConstant<phi::MPSContext, phi::complex64>;
+template struct SetConstant<phi::MPSContext, phi::complex128>;
+#endif
+
 #define DEFINE_CPU_TRANS(RANK)                                                 \
   template struct PADDLE_API Transpose<phi::CPUContext, phi::float16, RANK>;   \
   template struct PADDLE_API Transpose<phi::CPUContext, phi::bfloat16, RANK>;  \
@@ -179,6 +197,21 @@ void set_constant_with_place<phi::XPUPlace>(const phi::DeviceContext& dev_ctx,
   PADDLE_THROW(common::errors::PreconditionNotMet("Not compiled with XPU!"));
 #endif
 }
+
+#ifdef PADDLE_WITH_MPS
+template <>
+void set_constant_with_place<phi::MPSPlace>(const phi::DeviceContext& dev_ctx,
+                                            phi::DenseTensor* tensor,
+                                            float value) {
+  const auto* mps_ctx = dynamic_cast<const phi::MPSContext*>(&dev_ctx);
+  PADDLE_ENFORCE_NOT_NULL(
+      mps_ctx,
+      common::errors::InvalidArgument(
+          "Failed to dynamic_cast dev_ctx into phi::MPSContext."));
+  phi::funcs::SetConstant<phi::MPSContext, float> setter;
+  setter(*mps_ctx, tensor, value);
+}
+#endif
 
 template <>
 void set_constant_with_place<phi::IPUPlace>(const phi::DeviceContext& dev_ctx,

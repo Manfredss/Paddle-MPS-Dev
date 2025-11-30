@@ -17,6 +17,9 @@ limitations under the License. */
 #include "paddle/common/flags.h"
 #include "paddle/phi/backends/gpu/gpu_info.h"
 #include "paddle/phi/backends/xpu/xpu_info.h"
+#ifdef PADDLE_WITH_MPS
+#include "paddle/phi/backends/mps/mps_info.h"
+#endif
 #include "paddle/phi/common/place.h"
 #include "paddle/phi/core/compat/op_utils.h"
 #include "paddle/phi/core/enforce.h"
@@ -51,6 +54,10 @@ Backend TransToPhiBackend(const phi::Place& place) {
         return Backend::XPU;
       }
     }
+#ifdef PADDLE_WITH_MPS
+    case AllocationType::MPS:
+      return Backend::MPS;
+#endif
     case AllocationType::IPU:
       return Backend::IPU;
     case AllocationType::UNDEFINED:
@@ -89,6 +96,11 @@ phi::Place TransToPhiPlace(const Backend& backend, bool set_device_id) {
     case Backend::XPU:
       return phi::XPUPlace(
           set_device_id ? phi::backends::xpu::GetXPUCurrentDeviceId() : 0);
+#endif
+#ifdef PADDLE_WITH_MPS
+    case phi::Backend::MPS:
+      return phi::MPSPlace(
+          set_device_id ? phi::backends::mps::GetMPSCurrentDeviceId() : 0);
 #endif
     case Backend::KPS:
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)

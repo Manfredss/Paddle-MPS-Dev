@@ -18,6 +18,9 @@ limitations under the License. */
 #include "paddle/phi/backends/custom/custom_context.h"
 #include "paddle/phi/backends/gpu/gpu_context.h"
 #include "paddle/phi/backends/xpu/xpu_context.h"
+#ifdef PADDLE_WITH_MPS
+#include "paddle/phi/backends/mps/mps_context.h"
+#endif
 #include "paddle/phi/core/distributed/auto_parallel/dist_tensor.h"
 #include "paddle/phi/core/framework/feed_fetch_type.h"
 #include "paddle/phi/core/raw_tensor.h"
@@ -74,6 +77,10 @@ template class PADDLE_API TypeInfoTraits<phi::DeviceContext, GPUPinnedContext>;
 #ifdef PADDLE_WITH_XPU
 template class TypeInfoTraits<phi::DeviceContext, XPUContext>;
 template class TypeInfoTraits<phi::DeviceContext, XPUPinnedContext>;
+#endif
+
+#ifdef PADDLE_WITH_MPS
+template class PADDLE_API TypeInfoTraits<phi::DeviceContext, MPSContext>;
 #endif
 
 #ifdef PADDLE_WITH_DNNL
