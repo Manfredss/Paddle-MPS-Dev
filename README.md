@@ -1,8 +1,8 @@
-# Metal Performance Shaders (MPS) Backend for PaddlePaddle / PaddlePaddle Metal Performance Shaders (MPS) 后端
+# Paddle-MPS-Dev: Metal Performance Shaders (MPS) Backend for PaddlePaddle
 
 <div align="center">
 
-[English](#english) | [中文](#chinese)
+**English** | [简体中文](#简体中文) | [日本語](#日本語)
 
 </div>
 
@@ -13,7 +13,7 @@
 
 <div align="right">
 
-[English](#english) | [中文](#chinese) | [↑ Back to Top](#)
+[English](#english) | [简体中文](#简体中文) | [↑ Back to Top](#)
 
 </div>
 
@@ -467,18 +467,18 @@ This implementation was inspired by PyTorch's MPS backend and follows similar de
 
 <div align="center">
 
-[English](#english) | [中文](#chinese) | [↑ Back to Top](#)
+[English](#english) | [简体中文](#简体中文) | [↑ Back to Top](#)
 
 </div>
 
 ---
 
-<a name="chinese"></a>
+<a name="简体中文"></a>
 # PaddlePaddle Metal Performance Shaders (MPS) 后端实现
 
 <div align="right">
 
-[English](#english) | [中文](#chinese) | [↑ 返回顶部](#)
+[English](#english) | [简体中文](#简体中文) | [↑ 返回顶部](#)
 
 </div>
 
@@ -932,7 +932,7 @@ PD_REGISTER_KERNEL(new_op,
 
 <div align="center">
 
-[English](#english) | [中文](#chinese) | [↑ 返回顶部](#)
+[English](#english) | [简体中文](#简体中文) | [↑ 返回顶部](#)
 
 </div>
 
