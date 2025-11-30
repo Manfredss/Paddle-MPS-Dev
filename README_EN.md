@@ -74,23 +74,35 @@ Enable MPS support when configuring the build:
 ```bash
 cmake .. \
   -DWITH_MPS=ON \
-  -DCMAKE_OSX_ARCHITECTURES=arm64
+  -DWITH_GPU=OFF
 ```
-
-The `CMAKE_OSX_ARCHITECTURES=arm64` is required as MPS only supports ARM64 architecture.
 
 ### Build Process
 
 ```bash
-# Configure
-mkdir build && cd build
-cmake .. -DWITH_MPS=ON -DCMAKE_OSX_ARCHITECTURES=arm64
+pip install -r python requirements.txt
 
-# Build
+mkdir build && cd build
+
+# Your python PATH. Take python 3.10 as an example here
+export PYTHON_LIBRARY=/opt/anaconda3/envs/paddle/lib/libpython3.10.dylib
+
+export PYTHON_INCLUDE_DIRS=/opt/anaconda3/envs/paddle/include/python3.10
+
+export PATH=/opt/anaconda3/envs/paddle/bin:$PATH
+
+export LD_LIBRARY_PATH=/opt/anaconda3/envs/paddle
+
+export DYLD_LIBRARY_PATH=/opt/anaconda3/envs/paddle
+
+cmake .. -DPY_VERSION=3.10 -DPYTHON_INCLUDE_DIR=${PYTHON_INCLUDE_DIRS} -DPYTHON_LIBRARY=${PYTHON_LIBRARY} -DWITH_GPU=OFF -DWITH_MPS=ON
+
+# Compile
 make -j$(sysctl -n hw.ncpu)
 
-# Install Python package
-pip install -e ../python
+# install whl
+cd python/dist
+pip install -U # Your whl
 ```
 
 ## Usage

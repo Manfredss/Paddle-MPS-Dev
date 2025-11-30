@@ -74,23 +74,36 @@ Metal Performance Shaders (MPS) 是 Apple 为 Apple Silicon 设备提供的高�
 ```bash
 cmake .. \
   -DWITH_MPS=ON \
-  -DCMAKE_OSX_ARCHITECTURES=arm64
+  -DWITH_GPU=OFF
 ```
-
-`CMAKE_OSX_ARCHITECTURES=arm64` 是必需的，因为 MPS 仅支持 ARM64 架构。
 
 ### 编译过程
 
 ```bash
 # 配置
+pip install -r python requirements.txt
+
 mkdir build && cd build
-cmake .. -DWITH_MPS=ON -DCMAKE_OSX_ARCHITECTURES=arm64
+
+# 你 python 的路径。这里以 python 3.10 为例
+export PYTHON_LIBRARY=/opt/anaconda3/envs/paddle/lib/libpython3.10.dylib
+
+export PYTHON_INCLUDE_DIRS=/opt/anaconda3/envs/paddle/include/python3.10
+
+export PATH=/opt/anaconda3/envs/paddle/bin:$PATH
+
+export LD_LIBRARY_PATH=/opt/anaconda3/envs/paddle
+
+export DYLD_LIBRARY_PATH=/opt/anaconda3/envs/paddle
+
+cmake .. -DPY_VERSION=3.10 -DPYTHON_INCLUDE_DIR=${PYTHON_INCLUDE_DIRS} -DPYTHON_LIBRARY=${PYTHON_LIBRARY} -DWITH_GPU=OFF -DWITH_MPS=ON
 
 # 编译
 make -j$(sysctl -n hw.ncpu)
 
 # 安装 Python 包
-pip install -e ../python
+cd python/dist
+pip install -U # 对应的 whl
 ```
 
 ## 使用方法
