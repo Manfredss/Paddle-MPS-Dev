@@ -42,13 +42,13 @@ This implementation adds MPS backend support to PaddlePaddle, following a simila
 ```bash
 # Configure
 mkdir build && cd build
-cmake .. -DWITH_MPS=ON -DCMAKE_OSX_ARCHITECTURES=arm64
+cmake .. -DWITH_MPS=ON -DWITH_GPU=OFF
 
 # Build
 make -j$(sysctl -n hw.ncpu)
 
 # Install
-pip install -e ../python
+pip install -U python/dist/...
 ```
 
 ### Basic Usage
