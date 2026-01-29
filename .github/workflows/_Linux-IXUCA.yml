@@ -8,7 +8,7 @@ on:
         required: false
 
 env:
-  docker_image: paddle-ixuca-py39:v0
+  docker_image: paddle-ixuca-py39:3.3.0
   PR_ID: ${{ github.event.pull_request.number }}
   COMMIT_ID: ${{ github.event.pull_request.head.sha }}
   ci_scripts: /paddle/ci
@@ -235,6 +235,7 @@ jobs:
             -e AGILE_REVISION \
             -e GIT_PR_ID \
             -e PYTHON_VERSION \
+            -e PYTHONPATH= \
             -e no_proxy \
             -e PADDLE_BRANCH \
             -e CI_name \
@@ -251,10 +252,6 @@ jobs:
           wget -q --no-proxy https://paddle-github-action.bj.bcebos.com/PR/cpu_whl/${PR_ID}/${COMMIT_ID}/paddlepaddle-0.0.0-cp39-cp39-linux_x86_64.whl --no-check-certificate
           PATH=/usr/local/bin:${PATH}
           echo "export PATH=$PATH" >> ~/.bashrc
-          ln -sf $(which python3.9) /usr/local/bin/python
-          ln -sf $(which pip3.9) /usr/local/bin/pip
-          ln -sf $(which python3.9) /usr/bin/python
-          ln -sf $(which pip3.9) /usr/bin/pip
           echo "::group::Install Paddle"
           pip install paddlepaddle-*.whl && rm -rf paddlepaddle-*.whl
           python -c "import paddle; print(paddle.__version__)"
@@ -302,8 +299,8 @@ jobs:
           '
 
       - name: Terminate and delete the container
-        if: steps.check-approval.outputs.can-skip != 'true'
+        if: ${{ always() && steps.check-approval.outputs.can-skip != 'true' }}
         run: |
-          docker exec -t ${container_name} /bin/bash -c 'rm -rf * .[^.]*'
-          docker stop ${container_name}
-          docker rm ${container_name}
+          docker exec -t ${{ env.container_name }} /bin/bash -c 'rm -rf * .[^.]*'
+          docker stop ${{ env.container_name }}
+          docker rm ${{ env.container_name }}
