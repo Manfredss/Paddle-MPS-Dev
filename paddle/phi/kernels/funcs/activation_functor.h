@@ -5349,6 +5349,11 @@ __device__ __forceinline__
 }
 
 template <>
+__device__ __forceinline__ float log_local<float>(float x) {
+  return ::log(x);
+}
+
+template <>
 __device__ __forceinline__ double log_local<double>(double x) {
   return ::log(x);
 }
