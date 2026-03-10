@@ -1868,6 +1868,7 @@ def kl_div(
         return loss
 
 
+@param_one_alias(["label", "target"])
 def mse_loss(
     input: Tensor,
     label: Tensor,
@@ -1895,6 +1896,7 @@ def mse_loss(
     Parameters:
         input (Tensor): Input tensor, the data type should be float32 or float64.
         label (Tensor): Label tensor, the data type should be float32 or float64.
+            Alias: ``target``.
         reduction (string, optional): The reduction method for the output,
             could be 'none' | 'mean' | 'sum'.
             If :attr:`reduction` is ``'mean'``, the reduced mean loss is returned.
