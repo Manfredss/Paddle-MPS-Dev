@@ -60,5 +60,41 @@ class TestCosOutAndParamDecorator(unittest.TestCase):
             )
 
 
+def _mps_available():
+    return (
+        hasattr(paddle, "is_compiled_with_mps")
+        and paddle.is_compiled_with_mps()
+        and getattr(paddle, "mps", None) is not None
+        and paddle.mps.is_available()
+    )
+
+
+@unittest.skipUnless(_mps_available(), "Paddle is not built with MPS or MPS is unavailable")
+class TestCosMPS(unittest.TestCase):
+    """MPS-backend coverage for paddle.cos."""
+
+    def setUp(self):
+        paddle.disable_static()
+        paddle.mps.set_device(0)
+        np.random.seed(2026)
+
+    def _check(self, x_np, atol=1e-6):
+        out = paddle.cos(paddle.to_tensor(x_np, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.cos(x_np), rtol=1e-5, atol=atol)
+
+    def test_basic_shapes(self):
+        for shape in [(7,), (3, 4), (2, 3, 5)]:
+            with self.subTest(shape=shape):
+                x = np.random.uniform(-np.pi, np.pi, shape).astype(np.float32)
+                self._check(x)
+
+    def test_known_values(self):
+        x = np.array(
+            [0.0, np.pi / 6, np.pi / 3, np.pi / 2, np.pi, -np.pi / 2],
+            dtype=np.float32,
+        )
+        self._check(x, atol=1e-5)
+
+
 if __name__ == "__main__":
     unittest.main()

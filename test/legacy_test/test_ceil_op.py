@@ -95,6 +95,41 @@ class TestCeilAPI_Compatibility(unittest.TestCase):
                     np.testing.assert_allclose(out, ref_out, rtol=1e-05)
 
 
+def _mps_available():
+    return (
+        hasattr(paddle, "is_compiled_with_mps")
+        and paddle.is_compiled_with_mps()
+        and getattr(paddle, "mps", None) is not None
+        and paddle.mps.is_available()
+    )
+
+
+@unittest.skipUnless(_mps_available(), "Paddle is not built with MPS or MPS is unavailable")
+class TestCeilMPS(unittest.TestCase):
+    """MPS-backend coverage for paddle.ceil."""
+
+    def setUp(self):
+        paddle.disable_static()
+        paddle.mps.set_device(0)
+        np.random.seed(2026)
+
+    def _check(self, x_np):
+        out = paddle.ceil(paddle.to_tensor(x_np, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.ceil(x_np), rtol=1e-5, atol=1e-6)
+
+    def test_basic_shapes(self):
+        for shape in [(10,), (3, 4), (2, 3, 4)]:
+            with self.subTest(shape=shape):
+                x = np.random.uniform(-5.0, 5.0, shape).astype(np.float32)
+                self._check(x)
+
+    def test_boundary_values(self):
+        x = np.array(
+            [-2.0, -1.5, -0.5, 0.0, 0.5, 1.5, 2.0, 3.2], dtype=np.float32
+        )
+        self._check(x)
+
+
 if __name__ == '__main__':
     paddle.enable_static()
     unittest.main()

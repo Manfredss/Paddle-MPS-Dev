@@ -414,5 +414,56 @@ class TestElementwiseMaximumOp_Stride_ZeroSize1(
         self.y_trans = np.transpose(self.y, self.perm)
 
 
+def _mps_available():
+    return (
+        hasattr(paddle, "is_compiled_with_mps")
+        and paddle.is_compiled_with_mps()
+        and getattr(paddle, "mps", None) is not None
+        and paddle.mps.is_available()
+    )
+
+
+@unittest.skipUnless(_mps_available(), "Paddle is not built with MPS or MPS is unavailable")
+class TestMaximumMPS(unittest.TestCase):
+    """MPS-backend coverage for paddle.maximum.
+
+    Covers same-shape inputs, broadcast inputs (matches NumPy/PyTorch semantics),
+    and the trivial idempotent case.
+    """
+
+    def setUp(self):
+        paddle.disable_static()
+        paddle.mps.set_device(0)
+        np.random.seed(2026)
+
+    def _check(self, x_np, y_np):
+        x_p = paddle.to_tensor(x_np, place="mps")
+        y_p = paddle.to_tensor(y_np, place="mps")
+        out = paddle.maximum(x_p, y_p).numpy()
+        np.testing.assert_allclose(
+            out, np.maximum(x_np, y_np), rtol=1e-5, atol=1e-6,
+        )
+
+    def test_same_shape(self):
+        for shape in [(6,), (3, 4), (2, 3, 5)]:
+            with self.subTest(shape=shape):
+                x = np.random.uniform(-5.0, 5.0, shape).astype(np.float32)
+                y = np.random.uniform(-5.0, 5.0, shape).astype(np.float32)
+                self._check(x, y)
+
+    def test_broadcast(self):
+        x = np.random.uniform(-5.0, 5.0, (3, 4, 5)).astype(np.float32)
+        y = np.random.uniform(-5.0, 5.0, (4, 5)).astype(np.float32)
+        self._check(x, y)
+
+        x = np.random.uniform(-2.0, 2.0, (4, 1)).astype(np.float32)
+        y = np.random.uniform(-2.0, 2.0, (1, 5)).astype(np.float32)
+        self._check(x, y)
+
+    def test_idempotent_when_equal(self):
+        x = np.random.uniform(-1.0, 1.0, (4, 4)).astype(np.float32)
+        self._check(x, x)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -48,6 +48,9 @@ MPSGraphTensor* CreateMPSGraphTensorWithShape(MPSGraph* graph,
                                               const DenseTensor& tensor,
                                               const std::string& name);
 
+// Helper function to convert Paddle DataType to MPSDataType
+MPSDataType GetMPSDataType(DataType dtype);
+
 }  // namespace mps
 }  // namespace backends
 }  // namespace phi

@@ -20,6 +20,7 @@ limitations under the License. */
 
 #include "glog/logging.h"
 #include "paddle/phi/backends/mps/mps_context.h"
+#include "paddle/phi/common/data_type.h"
 #include "paddle/phi/core/enforce.h"
 #include "paddle/phi/core/memory/allocation/mps_allocator.h"
 
@@ -132,6 +133,30 @@ id<MTLBuffer> GetMTLBuffer(const DenseTensor& tensor) {
                                                      options:MTLResourceStorageModeShared
                                                  deallocator:nil];
     return buffer;
+  }
+}
+
+MPSDataType GetMPSDataType(DataType dtype) {
+  switch (dtype) {
+    case DataType::FLOAT32:
+      return MPSDataTypeFloat32;
+    case DataType::FLOAT16:
+      return MPSDataTypeFloat16;
+    case DataType::INT32:
+      return MPSDataTypeInt32;
+    case DataType::INT16:
+      return MPSDataTypeInt16;
+    case DataType::INT8:
+      return MPSDataTypeInt8;
+    case DataType::UINT32:
+      return MPSDataTypeUInt32;
+    case DataType::UINT16:
+      return MPSDataTypeUInt16;
+    case DataType::UINT8:
+      return MPSDataTypeUInt8;
+    default:
+      // Default to float32 for unsupported types
+      return MPSDataTypeFloat32;
   }
 }
 

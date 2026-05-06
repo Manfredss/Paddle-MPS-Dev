@@ -28,66 +28,66 @@ limitations under the License. */
 namespace phi {
 
 template <typename T>
-void SqrtKernelImpl(const MPSContext& dev_ctx,
-                    const DenseTensor& x,
-                    DenseTensor* out) {
+void CosKernelImpl(const MPSContext& dev_ctx,
+                   const DenseTensor& x,
+                   DenseTensor* out) {
   @autoreleasepool {
     MPSGraph* graph = backends::mps::GetMPSGraph(dev_ctx);
-    
+
     MPSGraphTensor* x_tensor = backends::mps::CreateMPSGraphTensorWithShape(
         graph, x, "x");
-    
-    // Perform square root using MPSGraph
-    MPSGraphTensor* result_tensor = [graph squareRootWithTensor:x_tensor
-                                                           name:@"sqrt_result"];
-    
+
+    // y = cos(x) using MPSGraph cosWithTensor:
+    MPSGraphTensor* result_tensor = [graph cosWithTensor:x_tensor
+                                                    name:@"cos_result"];
+
     dev_ctx.template Alloc<T>(out);
-    
+
     id<MTLBuffer> out_buffer = backends::mps::GetMTLBuffer(*out);
     if (out_buffer == nil) {
-      VLOG(3) << "MPS buffer not available, using CPU fallback for sqrt";
+      VLOG(3) << "MPS buffer not available, using CPU fallback for cos";
       return;
     }
-    
+
     auto out_dims = out->dims();
     NSMutableArray<NSNumber*>* out_shape = [NSMutableArray arrayWithCapacity:out_dims.size()];
     for (int i = 0; i < out_dims.size(); ++i) {
       [out_shape addObject:@(out_dims[i])];
     }
-    
+
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
                  dataType:MPSDataTypeFloat32];
-    
+
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     if (x_buffer == nil) {
-      VLOG(3) << "Input buffer not available, using CPU fallback for sqrt";
+      VLOG(3) << "Input buffer not available, using CPU fallback for cos";
       return;
     }
-    
+
     auto x_dims = x.dims();
     NSMutableArray<NSNumber*>* x_shape = [NSMutableArray arrayWithCapacity:x_dims.size()];
     for (int i = 0; i < x_dims.size(); ++i) {
       [x_shape addObject:@(x_dims[i])];
     }
-    
+
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
                  dataType:MPSDataTypeFloat32];
-    
+
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
     };
-    
+
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
       result_tensor: out_data
     };
-    
+
     id<MTLDevice> device = (__bridge id<MTLDevice>)dev_ctx.device();
     id<MTLCommandQueue> commandQueue = [device newCommandQueue];
-    
+
     if (@available(macOS 12.0, *)) {
       [graph runWithMTLCommandQueue:commandQueue
                               feeds:feeds
@@ -101,17 +101,17 @@ void SqrtKernelImpl(const MPSContext& dev_ctx,
 }
 
 template <typename T, typename Context>
-void SqrtKernel(const Context& dev_ctx,
-                const DenseTensor& x,
-                DenseTensor* out) {
+void CosKernel(const Context& dev_ctx,
+               const DenseTensor& x,
+               DenseTensor* out) {
   if (x.numel() == 0) {
     dev_ctx.template Alloc<T>(out);
     return;
   }
-  
+
   const auto* mps_ctx = dynamic_cast<const MPSContext*>(&dev_ctx);
   if (mps_ctx != nullptr) {
-    SqrtKernelImpl<T>(*mps_ctx, x, out);
+    CosKernelImpl<T>(*mps_ctx, x, out);
   } else {
     PADDLE_THROW(common::errors::InvalidArgument(
         "Expected MPSContext but got different context type"));
@@ -120,11 +120,10 @@ void SqrtKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
-PD_REGISTER_KERNEL(sqrt,
+PD_REGISTER_KERNEL(cos,
                    MPS,
                    ALL_LAYOUT,
-                   phi::SqrtKernel,
+                   phi::CosKernel,
                    float) {}
 
 #endif  // PADDLE_WITH_MPS
-

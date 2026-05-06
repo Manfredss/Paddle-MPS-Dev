@@ -60,5 +60,44 @@ class TestFloorOutAndParamDecorator(unittest.TestCase):
             )
 
 
+def _mps_available():
+    return (
+        hasattr(paddle, "is_compiled_with_mps")
+        and paddle.is_compiled_with_mps()
+        and getattr(paddle, "mps", None) is not None
+        and paddle.mps.is_available()
+    )
+
+
+@unittest.skipUnless(_mps_available(), "Paddle is not built with MPS or MPS is unavailable")
+class TestFloorMPS(unittest.TestCase):
+    """MPS-backend coverage for paddle.floor.
+
+    Includes an explicit boundary case for negatives + .5 values where
+    floor / int-cast-style implementations frequently disagree.
+    """
+
+    def setUp(self):
+        paddle.disable_static()
+        paddle.mps.set_device(0)
+        np.random.seed(2026)
+
+    def _check(self, x_np):
+        out = paddle.floor(paddle.to_tensor(x_np, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.floor(x_np), rtol=1e-5, atol=1e-6)
+
+    def test_basic_shapes(self):
+        for shape in [(10,), (3, 4), (2, 3, 4)]:
+            with self.subTest(shape=shape):
+                x = np.random.uniform(-5.0, 5.0, shape).astype(np.float32)
+                self._check(x)
+
+    def test_boundary_values(self):
+        x = np.array(
+            [-2.0, -1.5, -0.5, 0.0, 0.5, 1.5, 2.0, 3.7], dtype=np.float32
+        )
+        self._check(x)
+
+
 if __name__ == "__main__":
     unittest.main()

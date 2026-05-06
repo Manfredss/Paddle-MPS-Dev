@@ -352,6 +352,50 @@ class TestSignOutAndParamDecorator(unittest.TestCase):
             )
 
 
+def _mps_available():
+    return (
+        hasattr(paddle, "is_compiled_with_mps")
+        and paddle.is_compiled_with_mps()
+        and getattr(paddle, "mps", None) is not None
+        and paddle.mps.is_available()
+    )
+
+
+@unittest.skipUnless(_mps_available(), "Paddle is not built with MPS or MPS is unavailable")
+class TestSignMPS(unittest.TestCase):
+    """MPS-backend coverage for paddle.sign."""
+
+    def setUp(self):
+        paddle.disable_static()
+        paddle.mps.set_device(0)
+        np.random.seed(2026)
+
+    def _check(self, x_np):
+        out = paddle.sign(paddle.to_tensor(x_np, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.sign(x_np), rtol=1e-5, atol=1e-6)
+
+    def test_basic_shapes(self):
+        for shape in [(7,), (3, 4), (2, 3, 5)]:
+            with self.subTest(shape=shape):
+                x = np.random.uniform(-3.0, 3.0, shape).astype(np.float32)
+                self._check(x)
+
+    def test_explicit_zero_and_signs(self):
+        # Includes signed zero, positive and negative magnitudes.
+        x = np.array(
+            [-5.0, -1.0, -0.0, 0.0, 1.0, 5.0], dtype=np.float32
+        )
+        self._check(x)
+
+    def test_sign_times_abs_recovers_input(self):
+        # Identity: sign(x) * |x| == x for non-zero x.
+        x = np.random.uniform(-3.0, 3.0, (4, 5)).astype(np.float32)
+        x[np.abs(x) < 1e-3] = 1e-3
+        x_p = paddle.to_tensor(x, place="mps")
+        recovered = (paddle.sign(x_p) * paddle.abs(x_p)).numpy()
+        np.testing.assert_allclose(recovered, x, rtol=1e-5, atol=1e-6)
+
+
 if __name__ == "__main__":
     paddle.enable_static()
     unittest.main()

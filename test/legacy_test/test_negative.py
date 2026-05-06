@@ -82,5 +82,35 @@ class TestNegativeApi(unittest.TestCase):
             paddle.negative(x_tensor)
 
 
+def _mps_available():
+    return (
+        hasattr(paddle, "is_compiled_with_mps")
+        and paddle.is_compiled_with_mps()
+        and getattr(paddle, "mps", None) is not None
+        and paddle.mps.is_available()
+    )
+
+
+@unittest.skipUnless(_mps_available(), "Paddle is not built with MPS or MPS is unavailable")
+class TestNegativeApiMPS(unittest.TestCase):
+    """MPS-backend coverage for paddle.negative (alias of paddle.neg)."""
+
+    def setUp(self):
+        paddle.disable_static()
+        paddle.mps.set_device(0)
+        np.random.seed(2026)
+        self.shape = [2, 3, 4, 5]
+
+    def test_negative_float32(self):
+        x = np.random.uniform(-100, 100, self.shape).astype(np.float32)
+        out = paddle.negative(paddle.to_tensor(x, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.negative(x), rtol=1e-5, atol=1e-6)
+
+    def test_negative_signed_inputs(self):
+        x = np.array([-3.0, -1.0, 0.0, 1.0, 3.0], dtype=np.float32)
+        out = paddle.negative(paddle.to_tensor(x, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.negative(x), rtol=1e-5, atol=1e-6)
+
+
 if __name__ == '__main__':
     unittest.main()

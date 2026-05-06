@@ -14,7 +14,7 @@ limitations under the License. */
 
 #ifdef PADDLE_WITH_MPS
 
-#include "paddle/phi/kernels/activation_kernel.h"
+#include "paddle/phi/kernels/elementwise_kernel.h"
 
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
@@ -28,66 +28,82 @@ limitations under the License. */
 namespace phi {
 
 template <typename T>
-void SqrtKernelImpl(const MPSContext& dev_ctx,
-                    const DenseTensor& x,
-                    DenseTensor* out) {
+void MaximumKernelImpl(const MPSContext& dev_ctx,
+                       const DenseTensor& x,
+                       const DenseTensor& y,
+                       DenseTensor* out) {
   @autoreleasepool {
     MPSGraph* graph = backends::mps::GetMPSGraph(dev_ctx);
-    
+
     MPSGraphTensor* x_tensor = backends::mps::CreateMPSGraphTensorWithShape(
         graph, x, "x");
-    
-    // Perform square root using MPSGraph
-    MPSGraphTensor* result_tensor = [graph squareRootWithTensor:x_tensor
-                                                           name:@"sqrt_result"];
-    
+    MPSGraphTensor* y_tensor = backends::mps::CreateMPSGraphTensorWithShape(
+        graph, y, "y");
+
+    // Element-wise maximum (with broadcasting), matches torch.maximum / np.maximum
+    MPSGraphTensor* result_tensor = [graph maximumWithPrimaryTensor:x_tensor
+                                                    secondaryTensor:y_tensor
+                                                               name:@"maximum_result"];
+
     dev_ctx.template Alloc<T>(out);
-    
+
     id<MTLBuffer> out_buffer = backends::mps::GetMTLBuffer(*out);
     if (out_buffer == nil) {
-      VLOG(3) << "MPS buffer not available, using CPU fallback for sqrt";
+      VLOG(3) << "MPS buffer not available, using CPU fallback for maximum";
       return;
     }
-    
+
     auto out_dims = out->dims();
     NSMutableArray<NSNumber*>* out_shape = [NSMutableArray arrayWithCapacity:out_dims.size()];
     for (int i = 0; i < out_dims.size(); ++i) {
       [out_shape addObject:@(out_dims[i])];
     }
-    
+
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
                  dataType:MPSDataTypeFloat32];
-    
+
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
-    if (x_buffer == nil) {
-      VLOG(3) << "Input buffer not available, using CPU fallback for sqrt";
+    id<MTLBuffer> y_buffer = backends::mps::GetMTLBuffer(y);
+
+    if (x_buffer == nil || y_buffer == nil) {
+      VLOG(3) << "Input buffers not available, using CPU fallback for maximum";
       return;
     }
-    
+
     auto x_dims = x.dims();
+    auto y_dims = y.dims();
     NSMutableArray<NSNumber*>* x_shape = [NSMutableArray arrayWithCapacity:x_dims.size()];
+    NSMutableArray<NSNumber*>* y_shape = [NSMutableArray arrayWithCapacity:y_dims.size()];
     for (int i = 0; i < x_dims.size(); ++i) {
       [x_shape addObject:@(x_dims[i])];
     }
-    
+    for (int i = 0; i < y_dims.size(); ++i) {
+      [y_shape addObject:@(y_dims[i])];
+    }
+
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
                  dataType:MPSDataTypeFloat32];
-    
+    MPSGraphTensorData* y_data = [[MPSGraphTensorData alloc]
+        initWithMTLBuffer:y_buffer
+                    shape:y_shape
+                 dataType:MPSDataTypeFloat32];
+
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
-      x_tensor: x_data
+      x_tensor: x_data,
+      y_tensor: y_data
     };
-    
+
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
       result_tensor: out_data
     };
-    
+
     id<MTLDevice> device = (__bridge id<MTLDevice>)dev_ctx.device();
     id<MTLCommandQueue> commandQueue = [device newCommandQueue];
-    
+
     if (@available(macOS 12.0, *)) {
       [graph runWithMTLCommandQueue:commandQueue
                               feeds:feeds
@@ -101,17 +117,18 @@ void SqrtKernelImpl(const MPSContext& dev_ctx,
 }
 
 template <typename T, typename Context>
-void SqrtKernel(const Context& dev_ctx,
-                const DenseTensor& x,
-                DenseTensor* out) {
-  if (x.numel() == 0) {
+void MaximumKernel(const Context& dev_ctx,
+                   const DenseTensor& x,
+                   const DenseTensor& y,
+                   DenseTensor* out) {
+  if (x.numel() == 0 || y.numel() == 0) {
     dev_ctx.template Alloc<T>(out);
     return;
   }
-  
+
   const auto* mps_ctx = dynamic_cast<const MPSContext*>(&dev_ctx);
   if (mps_ctx != nullptr) {
-    SqrtKernelImpl<T>(*mps_ctx, x, out);
+    MaximumKernelImpl<T>(*mps_ctx, x, y, out);
   } else {
     PADDLE_THROW(common::errors::InvalidArgument(
         "Expected MPSContext but got different context type"));
@@ -120,11 +137,10 @@ void SqrtKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
-PD_REGISTER_KERNEL(sqrt,
+PD_REGISTER_KERNEL(maximum,
                    MPS,
                    ALL_LAYOUT,
-                   phi::SqrtKernel,
+                   phi::MaximumKernel,
                    float) {}
 
 #endif  // PADDLE_WITH_MPS
-
