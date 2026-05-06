@@ -14,16 +14,9 @@
 
 #pragma once
 
-#ifdef __NVCC__
-#include "cub/cub.cuh"
-#endif
-#ifdef __HIPCC__
-#include <hipcub/hipcub.hpp>
-namespace cub = hipcub;
-#endif
-
 #include "paddle/phi/backends/gpu/gpu_device_function.h"
 #include "paddle/phi/backends/gpu/gpu_primitives.h"
+#include "paddle/phi/kernels/funcs/cub.h"
 #include "paddle/phi/kernels/primitive/kernel_primitives.h"
 
 namespace phi {
@@ -52,11 +45,11 @@ __device__ __inline__ void CudaAtomicAddWithWarp(T* sum, T value) {
   typedef cub::WarpReduce<T> WarpReduce;
   typename WarpReduce::TempStorage temp_storage;
   value = WarpReduce(temp_storage).Sum(value);
-  if (cub::LaneId() == 0) phi::CudaAtomicAdd(sum, value);
+  if (cub::LaneId() == 0) CudaAtomicAdd(sum, value);
 }
 
 template <typename T, typename AccT, int VecSize, int Num>
-__device__ __forceinline__ void ThreadReduce(phi::Array<const T*, Num> arrs,
+__device__ __forceinline__ void ThreadReduce(Array<const T*, Num> arrs,
                                              int64_t size,
                                              const int offset,
                                              AccT* out_mean,
@@ -175,7 +168,7 @@ __global__ void VectorizedGetMeanAndVarNCHW(
     AccT x_var = static_cast<AccT>(0);
     x += i * size;
     const int input_offset = ((uint64_t)x) % ALIGN_BYTES / sizeof(T);
-    phi::Array<const T*, 1> ins;
+    Array<const T*, 1> ins;
     ins[0] = x;
     ThreadReduce<T, AccT, VecSize, 1>(ins, size, input_offset, &x_mean, &x_var);
     ReduceMeanAndVar<AccT>(mean, var, x_mean, x_var, size, i);

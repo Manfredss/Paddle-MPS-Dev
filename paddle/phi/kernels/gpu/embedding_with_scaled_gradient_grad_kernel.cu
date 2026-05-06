@@ -25,16 +25,9 @@
 #include "paddle/phi/core/kernel_registry.h"
 #include "paddle/phi/core/mixed_vector.h"
 #include "paddle/phi/kernels/empty_kernel.h"
+#include "paddle/phi/kernels/funcs/cub.h"
 #include "paddle/phi/kernels/funcs/eigen/common.h"
 #include "paddle/phi/kernels/funcs/embedding_util.h"
-
-#ifdef __NVCC__
-#include "cub/cub.cuh"
-#endif
-#ifdef __HIPCC__
-#include <hipcub/hipcub.hpp>
-namespace cub = hipcub;
-#endif
 
 using phi::PADDLE_CUDA_NUM_THREADS;
 COMMON_DECLARE_int64(embedding_deterministic);
@@ -71,10 +64,10 @@ __global__ void EmbeddingGrad(T* table,
     const T* out = output + idy * D;
     T* tab = table + id * D;
 #ifdef PADDLE_WITH_CUDA
-    phi::VectorizedAtomicAddPerBlock(D, idx, blockDim.x, out, tab);
+    VectorizedAtomicAddPerBlock(D, idx, blockDim.x, out, tab);
 #else
     for (int64_t i = idx; i < D; i += blockDim.x) {
-      phi::CudaAtomicAdd(&tab[i], out[i]);
+      CudaAtomicAdd(&tab[i], out[i]);
     }
 #endif
     idy += blockDim.y * gridDim.x;
@@ -94,13 +87,13 @@ __global__ void CountFreqKernel(const IdT* ids_data,
 
   const int idx = threadIdx.x + blockIdx.x * blockDim.x;
   if (idx < num_ids) {
-    phi::CudaAtomicAdd(&buf_count[ids_data[idx]], 1);
+    CudaAtomicAdd(&buf_count[ids_data[idx]], 1);
   }
 
   __syncthreads();
 
   for (int64_t i = threadIdx.x; i < num_weights; i += blockDim.x) {
-    phi::CudaAtomicAdd(&count_data[i], buf_count[i]);
+    CudaAtomicAdd(&count_data[i], buf_count[i]);
   }
 }
 
@@ -109,14 +102,13 @@ __global__ void ScaleGradKernel(const int* count_data,
                                 int64_t num_weights,
                                 int64_t num_weight_dim,
                                 T* table) {
-  using MPType = typename phi::dtype::MPTypeTrait<T>::Type;
+  using MT = typename MPTypeTrait<T>::Type;
   const int idx = threadIdx.x + blockIdx.x * blockDim.x;
   if (idx < num_weights) {
-    MPType freq = static_cast<MPType>(count_data[idx]);
-    freq = (freq == static_cast<MPType>(0)) ? 1 : freq;
+    MT freq = static_cast<MT>(count_data[idx]);
+    freq = (freq == static_cast<MT>(0)) ? 1 : freq;
     for (int i = 0; i < num_weight_dim; ++i) {
-      MPType scaled_grad =
-          static_cast<MPType>(table[idx * num_weight_dim + i]) / freq;
+      MT scaled_grad = static_cast<MT>(table[idx * num_weight_dim + i]) / freq;
       table[idx * num_weight_dim + i] = static_cast<T>(scaled_grad);
     }
   }
@@ -161,8 +153,12 @@ struct EmbeddingWithScaledGradientGradCUDAFunctor {
           cudaMemsetAsync(d_table, 0, N * D * sizeof(T), dev_ctx_.stream()));
 #endif
 
+      // When input has 0 elements, d_table is already correctly zeroed.
+      // Skip all kernel launches to avoid CUDA error(9) from GET_BLOCKS(0)==0.
+      if (K == 0) return;
+
       if (FLAGS_embedding_deterministic == 1) {
-        phi::funcs::LaunchEmbeddingGradDeterministicKernel<T, IdT>(
+        funcs::LaunchEmbeddingGradDeterministicKernel<T, IdT>(
             dev_ctx_, ids, d_output, d_table, N, D, K);
       } else {
         const int gridx = 2 * dev_ctx_.GetSMCount();
@@ -178,7 +174,7 @@ struct EmbeddingWithScaledGradientGradCUDAFunctor {
       }
 
       DenseTensor count_ids =
-          phi::Empty<int, Context>(dev_ctx_, {static_cast<int64_t>(N)});
+          Empty<int, Context>(dev_ctx_, {static_cast<int64_t>(N)});
       int* count_ids_data = count_ids.data<int>();
       auto stream = dev_ctx_.stream();
 #ifdef PADDLE_WITH_HIP
@@ -197,7 +193,7 @@ struct EmbeddingWithScaledGradientGradCUDAFunctor {
   }
 
  private:
-  const phi::GPUContext& dev_ctx_;
+  const GPUContext& dev_ctx_;
   const DenseTensor& input_;
   const DenseTensor& weight_;
   const DenseTensor& out_grad_;
@@ -214,11 +210,11 @@ void EmbeddingWithScaledGradientGradKernel(const Context& dev_ctx,
                                            DenseTensor* weight_grad) {
   EmbeddingWithScaledGradientGradCUDAFunctor<T, Context> functor(
       dev_ctx, input, weight, out_grad, padding_idx, weight_grad);
-  if (input.dtype() == phi::DataType::INT32) {
+  if (input.dtype() == DataType::INT32) {
     functor.template apply<int>();
-  } else if (input.dtype() == phi::DataType::INT64) {
+  } else if (input.dtype() == DataType::INT64) {
     functor.template apply<int64_t>();
-  } else if (input.dtype() == phi::DataType::INT16) {
+  } else if (input.dtype() == DataType::INT16) {
     functor.template apply<int16_t>();
   } else {
     PADDLE_THROW(common::errors::Unimplemented(

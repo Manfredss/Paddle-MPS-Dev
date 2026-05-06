@@ -40,10 +40,9 @@ void TraceKernel(const Context& dev_ctx,
     auto out_dim_size = out->dims().size();
     if (out_dim_size == 0) out_dim_size = 1;
     reduce_dims.push_back(out_dim_size);
-    phi::SumKernel<T, Context>(
-        dev_ctx, diag, reduce_dims, diag.dtype(), false, out);
+    SumKernel<T, Context>(dev_ctx, diag, reduce_dims, diag.dtype(), false, out);
   } else {
-    phi::funcs::SetConstant<Context, T> functor;
+    funcs::SetConstant<Context, T> functor;
     functor(dev_ctx, out, static_cast<T>(0));
   }
 }

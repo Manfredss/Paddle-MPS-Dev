@@ -22,8 +22,6 @@
 #include "paddle/phi/kernels/full_kernel.h"
 namespace phi {
 
-using phi::PADDLE_CUDA_NUM_THREADS;
-
 template <typename T, typename IndexType>
 __global__ void Pad3DConstNCDHW(const IndexType nthreads,
                                 const T* in_data,
@@ -359,8 +357,7 @@ void Pad3dKernel(const Context& dev_ctx,
   out->Resize(out_dims);
   T* out_data = dev_ctx.template Alloc<T>(out);
   if (x.numel() == 0) {
-    phi::Full<T, Context>(
-        dev_ctx, phi::IntArray(common::vectorize(out->dims())), pad_value, out);
+    Full<T, Context>(dev_ctx, out->dims(), pad_value, out);
     return;
   }
 

@@ -395,7 +395,13 @@ def make_hashable(x, error_msg=None):
             # means different value will lead to different hash code.
             return hash(x.tostring())
         elif isinstance(x, dict):
-            return tuple(map(make_hashable, x.values()))
+            # dict is order-insensitive
+            return tuple(
+                (make_hashable(k), make_hashable(v))
+                for k, v in sorted(
+                    x.items(), key=lambda kv: make_hashable(kv[0])
+                )
+            )
 
         error_msg = error_msg or "Requires a hashable object."
         raise ValueError(f"{error_msg} But received type: {type_name(x)}")
@@ -878,12 +884,20 @@ def infer_use_cinn_backend(backend, build_strategy):
 def cinn_is_available():
     if not paddle.is_compiled_with_cinn():
         return False
-    if not paddle.is_compiled_with_cuda():
-        return False
+
+    curr_place = paddle.framework._current_expected_place_()
     if not isinstance(
-        paddle.framework._current_expected_place_(), paddle.base.core.CUDAPlace
+        curr_place,
+        (paddle.base.core.CUDAPlace, paddle.base.core.CustomPlace),
     ):
         return False
+    if isinstance(curr_place, paddle.base.core.CustomPlace):
+        device_type = curr_place.get_device_type()
+        if not paddle.is_compiled_with_custom_device(device_type):
+            return False
+    elif not paddle.is_compiled_with_cuda():
+        return False
+
     if platform.system() != "Linux":
         return False
     if not paddle.framework.use_pir_api():

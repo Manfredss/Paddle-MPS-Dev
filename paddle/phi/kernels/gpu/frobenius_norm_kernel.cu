@@ -30,12 +30,12 @@ void FrobeniusNormKernel(const Context& dev_ctx,
                          DenseTensor* out) {
   if (x.numel() == 0) {
     dev_ctx.template Alloc<T>(out);
-    phi::funcs::SetConstant<Context, T>()(dev_ctx, out, static_cast<T>(0));
+    funcs::SetConstant<Context, T>()(dev_ctx, out, static_cast<T>(0));
     return;
   }
   reduce_all = recompute_reduce_all(x, dims.GetData(), reduce_all);
   auto out_dtype = x.dtype();
-  phi::Reduce<T, kps::AddFunctor, kps::SquareFunctor>(
+  Reduce<T, kps::AddFunctor, kps::SquareFunctor>(
       dev_ctx, x, reduce_all, dims.GetData(), keep_dim, out_dtype, out);
 
   SqrtKernel<T, Context>(dev_ctx, *out, out);

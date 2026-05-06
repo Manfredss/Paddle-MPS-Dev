@@ -38,7 +38,7 @@ MD5 = '7c2ac02c03563afcf9b574c7e56c153a'
 
 class Imdb(Dataset):
     """
-    Implementation of `IMDB <https://www.imdb.com/interfaces/>`_ dataset.
+    Implementation of `IMDB <https://datasets.imdbws.com/>`_ dataset.
 
     Args:
         data_file(str|None): path to data tar file, can be set None if
@@ -53,7 +53,7 @@ class Imdb(Dataset):
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> # doctest: +TIMEOUT(75)
             >>> import paddle
@@ -77,17 +77,16 @@ class Imdb(Dataset):
             ...     model = SimpleNet()
             ...     image, label = model(doc, label)
             ...     print(doc.shape, label.shape)
-            [121] [1]
-            [115] [1]
-            [386] [1]
-            [471] [1]
-            [585] [1]
-            [206] [1]
-            [221] [1]
-            [324] [1]
-            [166] [1]
-            [598] [1]
-
+            paddle.Size([121]) paddle.Size([1])
+            paddle.Size([115]) paddle.Size([1])
+            paddle.Size([386]) paddle.Size([1])
+            paddle.Size([471]) paddle.Size([1])
+            paddle.Size([585]) paddle.Size([1])
+            paddle.Size([206]) paddle.Size([1])
+            paddle.Size([221]) paddle.Size([1])
+            paddle.Size([324]) paddle.Size([1])
+            paddle.Size([166]) paddle.Size([1])
+            paddle.Size([598]) paddle.Size([1])
     """
 
     data_file: str | None

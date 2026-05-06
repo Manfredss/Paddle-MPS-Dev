@@ -28,9 +28,9 @@ void LinspaceKernel(const Context& dev_ctx,
                     DataType dtype,
                     DenseTensor* out) {
   int64_t num = 0;
-  if (number.dtype() == phi::DataType::INT64) {
+  if (number.dtype() == DataType::INT64) {
     num = number.data<int64_t>()[0];
-  } else if (number.dtype() == phi::DataType::INT32) {
+  } else if (number.dtype() == DataType::INT32) {
     num = number.data<int32_t>()[0];
   }
   PADDLE_ENFORCE_GE(num,
@@ -40,18 +40,18 @@ void LinspaceKernel(const Context& dev_ctx,
                         "than or equal to 0, but received num is %d",
                         num));
   if (num == 0) {
-    out->Resize(common::make_ddim({0}));
+    out->Resize({0});
     dev_ctx.template Alloc<T>(out);
     return;
   }
   using StepT = std::conditional_t<std::is_integral_v<T>, double, T>;
-  auto start_t = phi::funcs::TransDataType(dev_ctx, start, dtype);
-  auto stop_t = phi::funcs::TransDataType(dev_ctx, stop, dtype);
+  auto start_t = funcs::TransDataType(dev_ctx, start, dtype);
+  auto stop_t = funcs::TransDataType(dev_ctx, stop, dtype);
 
   T start_data = start_t.template data<T>()[0];
   T stop_data = stop_t.template data<T>()[0];
 
-  out->Resize(common::make_ddim({num}));
+  out->Resize({num});
   T* out_data = dev_ctx.template Alloc<T>(out);
 
   if (num > 1) {

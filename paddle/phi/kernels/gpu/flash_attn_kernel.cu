@@ -47,36 +47,34 @@ struct ZeroFunctor {
 };
 
 template <typename T, typename Context>
-void FlashAttnUnpaddedBaseKernel(
-    const Context& dev_ctx,
-    const DenseTensor& q,
-    const DenseTensor& k,
-    const DenseTensor& v,
-    const DenseTensor& cu_seqlens_q,
-    const DenseTensor& cu_seqlens_k,
-    const paddle::optional<DenseTensor>& fixed_seed_offset,
-    const paddle::optional<DenseTensor>& attn_mask,
-    const Scalar& max_seqlen_q_,
-    const Scalar& max_seqlen_k_,
-    float scale,
-    float dropout,
-    bool causal,
-    bool return_softmax,
-    bool is_test,
-    const std::string& rng_name,
-    DenseTensor* out,
-    DenseTensor* softmax,
-    DenseTensor* softmax_lse,
-    DenseTensor* seed_offset,
-    bool varlen_padded) {
+void FlashAttnUnpaddedBaseKernel(const Context& dev_ctx,
+                                 const DenseTensor& q,
+                                 const DenseTensor& k,
+                                 const DenseTensor& v,
+                                 const DenseTensor& cu_seqlens_q,
+                                 const DenseTensor& cu_seqlens_k,
+                                 const optional<DenseTensor>& fixed_seed_offset,
+                                 const optional<DenseTensor>& attn_mask,
+                                 const Scalar& max_seqlen_q_,
+                                 const Scalar& max_seqlen_k_,
+                                 float scale,
+                                 float dropout,
+                                 bool causal,
+                                 bool return_softmax,
+                                 bool is_test,
+                                 const std::string& rng_name,
+                                 DenseTensor* out,
+                                 DenseTensor* softmax,
+                                 DenseTensor* softmax_lse,
+                                 DenseTensor* seed_offset,
+                                 bool varlen_padded) {
 #ifdef PADDLE_WITH_FLASHATTN
   if (!out->IsInitialized()) dev_ctx.template Alloc<T>(out);
   if (varlen_padded) {
     std::vector<const DenseTensor*> inputs{};
     std::vector<DenseTensor*> outputs{out};
 
-    phi::funcs::ElementwiseKernel<T>(
-        dev_ctx, inputs, &outputs, ZeroFunctor<T>());
+    funcs::ElementwiseKernel<T>(dev_ctx, inputs, &outputs, ZeroFunctor<T>());
   }
 #ifdef PADDLE_WITH_HIP
   hipStream_t stream = dev_ctx.stream();
@@ -111,6 +109,7 @@ void FlashAttnUnpaddedBaseKernel(
   const int64_t num_heads = dims[1];
   const int64_t head_size = dims[2];
   const int64_t num_heads_k = k.dims()[1];
+  const int64_t total_q = dims[0];
 
   // TODO(umiswing): add shape check
 
@@ -138,11 +137,13 @@ void FlashAttnUnpaddedBaseKernel(
                               nullptr,  // startend_row_indices
                               softmax,
                               softmax_lse,
-                              seed_offset);
+                              seed_offset,
+                              /*_unpadded_lse*/ true,
+                              /*_total_q*/ total_q);
 
   VLOG(10) << "FlashAttn fwd seed: " << params.seed
            << ", offset: " << params.offset;
-  bool succ = phi::dynload::flash_attn_varlen_fwd(
+  bool succ = dynload::flash_attn_varlen_fwd(
       q.data(),
       k.data(),
       v.data(),
@@ -184,7 +185,13 @@ void FlashAttnUnpaddedBaseKernel(
       max_seqlen_k * k.strides()[0],
       max_seqlen_k * v.strides()[0],
       max_seqlen_q * out->strides()[0],
-      varlen_padded);
+#ifdef PADDLE_WITH_CUDA
+      varlen_padded,
+      params.total_q
+#else
+      varlen_padded
+#endif
+  );
   CheckFlashAttnStatus(succ);
 #else
   RaiseNotSupportedError();
@@ -192,27 +199,26 @@ void FlashAttnUnpaddedBaseKernel(
 }
 
 template <typename T, typename Context>
-void FlashAttnUnpaddedKernel(
-    const Context& dev_ctx,
-    const DenseTensor& q,
-    const DenseTensor& k,
-    const DenseTensor& v,
-    const DenseTensor& cu_seqlens_q,
-    const DenseTensor& cu_seqlens_k,
-    const paddle::optional<DenseTensor>& fixed_seed_offset,
-    const paddle::optional<DenseTensor>& attn_mask,
-    const Scalar& max_seqlen_q,
-    const Scalar& max_seqlen_k,
-    float scale,
-    float dropout,
-    bool causal,
-    bool return_softmax,
-    bool is_test,
-    const std::string& rng_name,
-    DenseTensor* out,
-    DenseTensor* softmax,
-    DenseTensor* softmax_lse,
-    DenseTensor* seed_offset) {
+void FlashAttnUnpaddedKernel(const Context& dev_ctx,
+                             const DenseTensor& q,
+                             const DenseTensor& k,
+                             const DenseTensor& v,
+                             const DenseTensor& cu_seqlens_q,
+                             const DenseTensor& cu_seqlens_k,
+                             const optional<DenseTensor>& fixed_seed_offset,
+                             const optional<DenseTensor>& attn_mask,
+                             const Scalar& max_seqlen_q,
+                             const Scalar& max_seqlen_k,
+                             float scale,
+                             float dropout,
+                             bool causal,
+                             bool return_softmax,
+                             bool is_test,
+                             const std::string& rng_name,
+                             DenseTensor* out,
+                             DenseTensor* softmax,
+                             DenseTensor* softmax_lse,
+                             DenseTensor* seed_offset) {
 #ifdef PADDLE_WITH_FLASHATTN
   FlashAttnUnpaddedBaseKernel<T>(dev_ctx,
                                  q,
@@ -276,8 +282,8 @@ void FlashAttnVarlenQKVPackedKernel(
     const DenseTensor& qkv,
     const DenseTensor& cu_seqlens_q,
     const DenseTensor& cu_seqlens_k,
-    const paddle::optional<DenseTensor>& fixed_seed_offset,
-    const paddle::optional<DenseTensor>& attn_mask,
+    const optional<DenseTensor>& fixed_seed_offset,
+    const optional<DenseTensor>& attn_mask,
     const Scalar& max_seqlen_q,
     const Scalar& max_seqlen_k,
     float scale,
@@ -324,23 +330,22 @@ void FlashAttnVarlenQKVPackedKernel(
 }
 
 template <typename T, typename Context>
-void FlashAttnBaseKernel(
-    const Context& dev_ctx,
-    const DenseTensor& q,
-    const DenseTensor& k,
-    const DenseTensor& v,
-    const paddle::optional<DenseTensor>& fixed_seed_offset,
-    const paddle::optional<DenseTensor>& attn_mask,
-    const paddle::optional<DenseTensor>& startend_row_indices,
-    float dropout,
-    bool causal,
-    bool return_softmax,
-    bool is_test,
-    const std::string& rng_name,
-    DenseTensor* out,
-    DenseTensor* softmax,
-    DenseTensor* softmax_lse,
-    DenseTensor* seed_offset) {
+void FlashAttnBaseKernel(const Context& dev_ctx,
+                         const DenseTensor& q,
+                         const DenseTensor& k,
+                         const DenseTensor& v,
+                         const optional<DenseTensor>& fixed_seed_offset,
+                         const optional<DenseTensor>& attn_mask,
+                         const optional<DenseTensor>& startend_row_indices,
+                         float dropout,
+                         bool causal,
+                         bool return_softmax,
+                         bool is_test,
+                         const std::string& rng_name,
+                         DenseTensor* out,
+                         DenseTensor* softmax,
+                         DenseTensor* softmax_lse,
+                         DenseTensor* seed_offset) {
 #ifdef PADDLE_WITH_FLASHATTN
   // q, k, v [batch_size, seq_len, num_heads, head_dim]
   const auto& dims = q.dims();
@@ -382,27 +387,30 @@ void FlashAttnBaseKernel(
                         head_size > 128
                     ? 2
                     : FLAGS_flash_attn_version;
-  FlashAttnFwdParamsV2<T> params = FlashAttnFwdParamsV2<T>(dev_ctx,
-                                                           version,
-                                                           batch_size,
-                                                           seqlen_q,
-                                                           seqlen_k,
-                                                           num_heads,
-                                                           num_heads_k,
-                                                           head_size,
-                                                           dropout,
-                                                           softmax_scale,
-                                                           causal,
-                                                           return_softmax,
-                                                           q.dtype(),
-                                                           is_test,
-                                                           rng_name,
-                                                           fixed_seed_offset,
-                                                           attn_mask,
-                                                           startend_row_indices,
-                                                           softmax,
-                                                           softmax_lse,
-                                                           seed_offset);
+  FlashAttnFwdParamsV2<T> params =
+      FlashAttnFwdParamsV2<T>(dev_ctx,
+                              version,
+                              batch_size,
+                              seqlen_q,
+                              seqlen_k,
+                              num_heads,
+                              num_heads_k,
+                              head_size,
+                              dropout,
+                              softmax_scale,
+                              causal,
+                              return_softmax,
+                              q.dtype(),
+                              is_test,
+                              rng_name,
+                              fixed_seed_offset,
+                              attn_mask,
+                              startend_row_indices,
+                              softmax,
+                              softmax_lse,
+                              seed_offset,
+                              /*_unpadded_lse*/ false,
+                              /*_total_q*/ 0);
 
   VLOG(10) << "[FlashAttn Forward" << version << "] q.shape=[" << q.dims()
            << "], k.shape=[" << k.dims() << "], v.shape=[" << v.dims() << "]";
@@ -438,32 +446,32 @@ void FlashAttnBaseKernel(
                           "mask_bounds must in [1,2,4]"));
     auto flashmask_maxmin_shape = params.startend_row_indices->dims();
     flashmask_maxmin_shape[2] = (flashmask_maxmin_shape[2] + 31) / 32 * 8;
-    flashmask_maxmin.set_type(phi::DataType::INT32);
+    flashmask_maxmin.set_type(DataType::INT32);
     flashmask_maxmin.Resize(flashmask_maxmin_shape);
     dev_ctx.template Alloc<T>(&flashmask_maxmin);
 
     downstart_row_indices =
-        phi::Slice<int32_t>(dev_ctx, startend_row_indices.get(), {3}, {0}, {1});
+        Slice<int32_t>(dev_ctx, startend_row_indices.get(), {3}, {0}, {1});
     downstart_row_indices_data = downstart_row_indices.data();
     if (startend_row_indices->dims()[3] == 2) {
       if (!causal) {
-        upend_row_indices = phi::Slice<int32_t>(
-            dev_ctx, startend_row_indices.get(), {3}, {1}, {2});
+        upend_row_indices =
+            Slice<int32_t>(dev_ctx, startend_row_indices.get(), {3}, {1}, {2});
         upend_row_indices_data = upend_row_indices.data();
       } else {
-        downend_row_indices = phi::Slice<int32_t>(
-            dev_ctx, startend_row_indices.get(), {3}, {1}, {2});
+        downend_row_indices =
+            Slice<int32_t>(dev_ctx, startend_row_indices.get(), {3}, {1}, {2});
         downend_row_indices_data = downend_row_indices.data();
       }
     } else if (startend_row_indices->dims()[3] == 4) {
-      upend_row_indices = phi::Slice<int32_t>(
-          dev_ctx, startend_row_indices.get(), {3}, {3}, {4});
+      upend_row_indices =
+          Slice<int32_t>(dev_ctx, startend_row_indices.get(), {3}, {3}, {4});
       upend_row_indices_data = upend_row_indices.data();
-      downend_row_indices = phi::Slice<int32_t>(
-          dev_ctx, startend_row_indices.get(), {3}, {1}, {2});
+      downend_row_indices =
+          Slice<int32_t>(dev_ctx, startend_row_indices.get(), {3}, {1}, {2});
       downend_row_indices_data = downend_row_indices.data();
-      upstart_row_indices = phi::Slice<int32_t>(
-          dev_ctx, startend_row_indices.get(), {3}, {2}, {3});
+      upstart_row_indices =
+          Slice<int32_t>(dev_ctx, startend_row_indices.get(), {3}, {2}, {3});
       upstart_row_indices_data = upstart_row_indices.data();
     }
   }
@@ -475,7 +483,7 @@ void FlashAttnBaseKernel(
 #endif
 
 #ifdef PADDLE_WITH_HIP
-  bool succ = phi::dynload::flash_attn_fwd(
+  bool succ = dynload::flash_attn_fwd(
       q.data(),
       k.data(),
       v.data(),
@@ -560,7 +568,7 @@ void FlashAttnBaseKernel(
     RaiseNotSupportedError(3);
 #endif
   } else {
-    succ = phi::dynload::flash_attn_fwd(
+    succ = dynload::flash_attn_fwd(
         q.data(),
         k.data(),
         v.data(),
@@ -621,8 +629,8 @@ void FlashAttnKernel(const Context& dev_ctx,
                      const DenseTensor& q,
                      const DenseTensor& k,
                      const DenseTensor& v,
-                     const paddle::optional<DenseTensor>& fixed_seed_offset,
-                     const paddle::optional<DenseTensor>& attn_mask,
+                     const optional<DenseTensor>& fixed_seed_offset,
+                     const optional<DenseTensor>& attn_mask,
                      float dropout,
                      bool causal,
                      bool return_softmax,
@@ -634,26 +642,16 @@ void FlashAttnKernel(const Context& dev_ctx,
                      DenseTensor* seed_offset) {
   if (q.numel() == 0 || k.numel() == 0 || v.numel() == 0) {
     if (out) {
-      Full<T, Context>(
-          dev_ctx, phi::IntArray(common::vectorize(out->dims())), 0, out);
+      Full<T, Context>(dev_ctx, out->dims(), 0, out);
     }
     if (softmax) {
-      Full<T, Context>(dev_ctx,
-                       phi::IntArray(common::vectorize(softmax->dims())),
-                       0,
-                       softmax);
+      Full<T, Context>(dev_ctx, softmax->dims(), 0, softmax);
     }
     if (softmax_lse) {
-      Full<T, Context>(dev_ctx,
-                       phi::IntArray(common::vectorize(softmax_lse->dims())),
-                       0,
-                       softmax_lse);
+      Full<T, Context>(dev_ctx, softmax_lse->dims(), 0, softmax_lse);
     }
     if (seed_offset) {
-      Full<T, Context>(dev_ctx,
-                       phi::IntArray(common::vectorize(seed_offset->dims())),
-                       0,
-                       seed_offset);
+      Full<T, Context>(dev_ctx, seed_offset->dims(), 0, seed_offset);
     }
     return;
   }
@@ -676,20 +674,19 @@ void FlashAttnKernel(const Context& dev_ctx,
 }
 
 template <typename T, typename Context>
-void FlashAttnQKVPackedKernel(
-    const Context& dev_ctx,
-    const DenseTensor& qkv,
-    const paddle::optional<DenseTensor>& fixed_seed_offset,
-    const paddle::optional<DenseTensor>& attn_mask,
-    float dropout,
-    bool causal,
-    bool return_softmax,
-    bool is_test,
-    const std::string& rng_name,
-    DenseTensor* out,
-    DenseTensor* softmax,
-    DenseTensor* softmax_lse,
-    DenseTensor* seed_offset) {
+void FlashAttnQKVPackedKernel(const Context& dev_ctx,
+                              const DenseTensor& qkv,
+                              const optional<DenseTensor>& fixed_seed_offset,
+                              const optional<DenseTensor>& attn_mask,
+                              float dropout,
+                              bool causal,
+                              bool return_softmax,
+                              bool is_test,
+                              const std::string& rng_name,
+                              DenseTensor* out,
+                              DenseTensor* softmax,
+                              DenseTensor* softmax_lse,
+                              DenseTensor* seed_offset) {
 #ifdef PADDLE_WITH_FLASHATTN
   const auto head_groupnum = qkv.dims()[2];  // nheads/nheads_k + 1 + 1
   DenseTensor q, k, v;
@@ -723,7 +720,7 @@ void FlashMaskKernel(const Context& dev_ctx,
                      const DenseTensor& k,
                      const DenseTensor& v,
                      const DenseTensor& startend_row_indices,
-                     const paddle::optional<DenseTensor>& fixed_seed_offset,
+                     const optional<DenseTensor>& fixed_seed_offset,
                      float dropout,
                      bool causal,
                      bool return_softmax,
@@ -733,6 +730,24 @@ void FlashMaskKernel(const Context& dev_ctx,
                      DenseTensor* softmax,
                      DenseTensor* softmax_lse,
                      DenseTensor* seed_offset) {
+  // Handle 0-size tensors: return zeros without calling CUDA kernel
+  // to avoid invalid memory access
+  if (q.numel() == 0 || k.numel() == 0 || v.numel() == 0) {
+    if (out) {
+      Full<T, Context>(dev_ctx, out->dims(), 0, out);
+    }
+    if (softmax) {
+      Full<T, Context>(dev_ctx, softmax->dims(), 0, softmax);
+    }
+    if (softmax_lse) {
+      Full<T, Context>(dev_ctx, softmax_lse->dims(), 0, softmax_lse);
+    }
+    if (seed_offset) {
+      Full<T, Context>(dev_ctx, seed_offset->dims(), 0, seed_offset);
+    }
+    return;
+  }
+
   FlashAttnBaseKernel<T, Context>(dev_ctx,
                                   q,
                                   k,

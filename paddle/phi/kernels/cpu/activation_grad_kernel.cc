@@ -291,9 +291,8 @@ void PowGradKernel(const Context& dev_ctx,
                    const Scalar& factor,
                    DenseTensor* dx) {
   if (factor.to<float>() == 0) {
-    std::vector<int64_t> vec_dims = common::vectorize(dx->dims());
-    phi::Full<T, Context>(
-        dev_ctx, phi::IntArray(vec_dims), static_cast<T>(0), dx);
+    std::vector<int64_t> vec_dims = vectorize(dx->dims());
+    Full<T, Context>(dev_ctx, vec_dims, static_cast<T>(0), dx);
     return;
   }
   PADDLE_ENFORCE_NOT_NULL(
@@ -307,7 +306,7 @@ void PowGradKernel(const Context& dev_ctx,
   auto x_flatten =
       EigenVector<T>::Flatten(GET_DATA_SAFELY(&x, "Input", "X", "PowGrad"));
   auto* place = dev_ctx.eigen_device();
-  phi::funcs::PowGradFunctor<T> functor;
+  funcs::PowGradFunctor<T> functor;
   auto attrs = functor.GetAttrs();
   *(attrs[0].second) = factor.to<float>();
   functor(*place, x_flatten, nullptr, dout_flatten, dx_flatten);

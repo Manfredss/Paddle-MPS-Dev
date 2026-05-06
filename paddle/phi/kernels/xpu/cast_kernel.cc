@@ -27,7 +27,7 @@ static DenseTensor Fill(const Context& dev_ctx,
                         std::vector<int> shape,
                         T fill_value) {
   DenseTensor ret;
-  ret.Resize(common::make_ddim(shape));
+  ret.Resize(shape);
   dev_ctx.template Alloc<T>(&ret);
   funcs::SetConstant<Context, T>()(dev_ctx, &ret, fill_value);
   return ret;
@@ -93,12 +93,12 @@ void CastKernel(const Context& dev_ctx,
                 DataType out_dtype,
                 DenseTensor* out) {
   if (x.dtype() == out_dtype) {
-    if (x.dims() == phi::make_ddim({-1})) {
+    if (x.dims() == make_ddim({-1})) {
       *out = x;
       return;
     }
     if (!out->IsSharedWith(x)) {
-      phi::Copy(dev_ctx, x, dev_ctx.GetPlace(), false, out);
+      Copy(dev_ctx, x, dev_ctx.GetPlace(), false, out);
     }
     return;
   }
@@ -144,7 +144,7 @@ void CastKernel(const Context& dev_ctx,
       CastXPUKernelImpl<T, float, Context>(dev_ctx, x, &real);
       dev_ctx.template Alloc<T>(out);
       DenseTensor imag = Fill<float, Context>(
-          dev_ctx, common::vectorize<int>(x.dims()), static_cast<float>(0.0));
+          dev_ctx, vectorize<int>(x.dims()), static_cast<float>(0.0));
       phi::ComplexKernel<float>(dev_ctx, real, imag, out);
       break;
     }
@@ -162,12 +162,12 @@ void CastKernel<phi::complex64, XPUContext>(const XPUContext& dev_ctx,
                                             DenseTensor* out) {
   using T = phi::complex64;
   if (x.dtype() == out_dtype) {
-    if (x.dims() == phi::make_ddim({-1})) {
+    if (x.dims() == make_ddim({-1})) {
       *out = x;
       return;
     }
     if (!out->IsSharedWith(x)) {
-      phi::Copy(dev_ctx, x, dev_ctx.GetPlace(), false, out);
+      Copy(dev_ctx, x, dev_ctx.GetPlace(), false, out);
     }
     return;
   }

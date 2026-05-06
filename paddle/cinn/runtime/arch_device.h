@@ -22,10 +22,12 @@
 #include "paddle/cinn/common/target.h"
 #include "paddle/cinn/runtime/backend_api.h"
 #include "paddle/common/enforce.h"
+#include "paddle/phi/backends/device_manager.h"
+#include "paddle/phi/common/place.h"
 
 namespace cinn::runtime {
 
-std::optional<int> GetArchDevice(const common::Target& target) {
+inline std::optional<int> GetArchDevice(const common::Target& target) {
   return target.arch.Match(
       [&](common::UnknownArch) -> std::optional<int> { return std::nullopt; },
       [&](common::X86Arch) -> std::optional<int> { return std::nullopt; },
@@ -37,6 +39,14 @@ std::optional<int> GetArchDevice(const common::Target& target) {
             cudaGetDevice(&device_id),
             cudaSuccess,
             ::common::errors::InvalidArgument("cudaGetDevice failed!"));
+        return std::optional<int>{device_id};
+#else
+        return std::nullopt;
+#endif
+      },
+      [&](common::CustomDeviceArch) -> std::optional<int> {
+#ifdef CINN_WITH_CUSTOM_DEVICE
+        int device_id = phi::DeviceManager::GetDevice(target.device_name_str());
         return std::optional<int>{device_id};
 #else
         return std::nullopt;
@@ -54,8 +64,8 @@ std::optional<int> GetArchDevice(const common::Target& target) {
       });
 }
 
-void SetArchDevice(const common::Target& target,
-                   const std::optional<int>& device_id) {
+inline void SetArchDevice(const common::Target& target,
+                          const std::optional<int>& device_id) {
   target.arch.Match(
       [&](common::UnknownArch) -> void {},
       [&](common::X86Arch) -> void {},
@@ -68,6 +78,17 @@ void SetArchDevice(const common::Target& target,
                               "Required device_id should have value, but "
                               "received std::nullopt."));
         cudaSetDevice(device_id.value());
+#endif
+      },
+      [&](common::CustomDeviceArch) -> void {
+#ifdef CINN_WITH_CUSTOM_DEVICE
+        PADDLE_ENFORCE_EQ(device_id.has_value(),
+                          true,
+                          ::common::errors::InvalidArgument(
+                              "Required device_id should have value, but "
+                              "received std::nullopt."));
+        phi::DeviceManager::SetDevice(target.device_name_str(),
+                                      device_id.value());
 #endif
       },
       [&](common::HygonDCUArchHIP) -> void {

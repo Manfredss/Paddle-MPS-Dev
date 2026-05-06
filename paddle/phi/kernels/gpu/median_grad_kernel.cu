@@ -26,7 +26,6 @@
 
 namespace phi {
 
-using phi::PADDLE_CUDA_NUM_THREADS;
 inline int GET_BLOCKS(const int N) {
   return (N + PADDLE_CUDA_NUM_THREADS - 1) / PADDLE_CUDA_NUM_THREADS;
 }
@@ -99,7 +98,7 @@ void CalcMedianGradKernel_GPU(const Context& dev_ctx,
   T* dx_data = dev_ctx.template Alloc<T>(x_grad);
   if (!dx_data) return;
 
-  phi::funcs::SetConstant<Context, T> set_zero;
+  funcs::SetConstant<Context, T> set_zero;
   set_zero(dev_ctx, x_grad, static_cast<T>(0));
   // VLOG(0) << "x_grad->dims():  " << x_grad->dims();
 

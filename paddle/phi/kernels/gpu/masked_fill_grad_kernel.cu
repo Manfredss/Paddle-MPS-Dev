@@ -133,16 +133,15 @@ __global__ void GPUMaskedFillGradKernel(const T* out_grad,
 }
 
 template <typename T>
-void DispatchMaskFillGradKernel(
-    const phi::GPUContext& dev_ctx,
-    const T* input,
-    const bool* mask,
-    const int64_t input_len,
-    const int64_t batch_size,
-    T* x_grad,
-    T* value_grad,
-    int vec_size,
-    const phi::backends::gpu::GpuLaunchConfig& config) {
+void DispatchMaskFillGradKernel(const GPUContext& dev_ctx,
+                                const T* input,
+                                const bool* mask,
+                                const int64_t input_len,
+                                const int64_t batch_size,
+                                T* x_grad,
+                                T* value_grad,
+                                int vec_size,
+                                const backends::gpu::GpuLaunchConfig& config) {
   auto stream = dev_ctx.stream();
   if (x_grad && value_grad) {
     switch (vec_size) {
@@ -200,14 +199,14 @@ void DispatchMaskFillGradKernel(
 
 template <typename T>
 void DispatchMaskFillOneValueGradKernel(
-    const phi::GPUContext& dev_ctx,
+    const GPUContext& dev_ctx,
     const T* input,
     const bool* mask,
     const int64_t input_len,
     const int64_t batch_size,
     T* x_grad,
     int vec_size,
-    const phi::backends::gpu::GpuLaunchConfig& config) {
+    const backends::gpu::GpuLaunchConfig& config) {
   auto stream = dev_ctx.stream();
   if (x_grad) {
     switch (vec_size) {
@@ -230,7 +229,7 @@ void DispatchMaskFillOneValueGradKernel(
 }
 
 template <typename T>
-void GPUMaskedFillGrad(const phi::GPUContext& dev_ctx,
+void GPUMaskedFillGrad(const GPUContext& dev_ctx,
                        const DenseTensor& out_grad,
                        const DenseTensor& mask,
                        DenseTensor* x_grad,
@@ -246,15 +245,15 @@ void GPUMaskedFillGrad(const phi::GPUContext& dev_ctx,
   int64_t batch_size = input_len / mask_len;
 
   int vec_size = 8;
-  vec_size = std::min(phi::GetVectorizedSize(out_grad_data), vec_size);
+  vec_size = std::min(GetVectorizedSize(out_grad_data), vec_size);
   if (x_grad && x_grad->initialized()) {
     x_grad_data = x_grad->data<T>();
-    vec_size = std::min(phi::GetVectorizedSize(x_grad_data), vec_size);
+    vec_size = std::min(GetVectorizedSize(x_grad_data), vec_size);
   }
 
   if (value_grad && value_grad->initialized()) {
     value_grad_data = value_grad->data<T>();
-    vec_size = std::min(phi::GetVectorizedSize(value_grad_data), vec_size);
+    vec_size = std::min(GetVectorizedSize(value_grad_data), vec_size);
   }
 
   while (vec_size > 1 && batch_size % vec_size != 0) {
@@ -262,7 +261,7 @@ void GPUMaskedFillGrad(const phi::GPUContext& dev_ctx,
   }
 
   auto config =
-      phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, input_len, vec_size);
+      backends::gpu::GetGpuLaunchConfig1D(dev_ctx, input_len, vec_size);
 
   if (value_grad && value_grad->numel() == 1) {
     DispatchMaskFillOneValueGradKernel<T>(dev_ctx,
@@ -275,24 +274,20 @@ void GPUMaskedFillGrad(const phi::GPUContext& dev_ctx,
                                           config);
     if (value_grad) {
       DenseTensor zero_tensor;
-      phi::Full<T, phi::GPUContext>(
-          dev_ctx,
-          phi::IntArray(common::vectorize(out_grad.dims())),
-          T(0.0),
-          &zero_tensor);
+      Full<T, GPUContext>(dev_ctx, out_grad.dims(), T(0.0), &zero_tensor);
       DenseTensor value_grad_tensor;
       value_grad_tensor.set_meta(out_grad.meta());
-      WhereKernel<T, phi::GPUContext>(
+      WhereKernel<T, GPUContext>(
           dev_ctx, mask, out_grad, zero_tensor, &value_grad_tensor);
       std::vector<int> v_dims(value_grad_tensor.dims().size());
       std::iota(v_dims.begin(), v_dims.end(), 0);
       IntArray v_axis(v_dims);
-      SumKernel<T, phi::GPUContext>(dev_ctx,
-                                    value_grad_tensor,
-                                    v_axis,
-                                    value_grad->dtype(),
-                                    false,
-                                    value_grad);
+      SumKernel<T, GPUContext>(dev_ctx,
+                               value_grad_tensor,
+                               v_axis,
+                               value_grad->dtype(),
+                               false,
+                               value_grad);
     }
 
   } else {
@@ -319,12 +314,10 @@ void MaskedFillGradKernel(const Context& dev_ctx,
   if (out_grad.numel() == 0 || mask.numel() == 0) {
     // x shape [2, 1, 3], mask shape [2, 0, 3], x_grad shape [2, 1, 3]
     if (x_grad) {
-      phi::Full<T, Context>(
-          dev_ctx, phi::IntArray(common::vectorize(x_grad->dims())), 0, x_grad);
+      Full<T, Context>(dev_ctx, x_grad->dims(), 0, x_grad);
     }
     if (v_grad) {
-      phi::Full<T, Context>(
-          dev_ctx, phi::IntArray(common::vectorize(v_grad->dims())), 0, v_grad);
+      Full<T, Context>(dev_ctx, v_grad->dims(), 0, v_grad);
     }
     return;
   }
@@ -337,8 +330,8 @@ void MaskedFillGradKernel(const Context& dev_ctx,
   bool expand_x = false;
   bool expand_v = false;
   auto expanded_size =
-      common::vectorize(funcs::BroadcastTwoDims(x_dims, mask_dims, -1));
-  auto expanded_dims = common::make_ddim(expanded_size);
+      vectorize(funcs::BroadcastTwoDims(x_dims, mask_dims, -1));
+  auto expanded_dims = make_ddim(expanded_size);
   bool flag = funcs::CanDispatchMaskFillShortcut(out_grad_dims, mask_dims);
   if (expanded_dims != x_dims) flag = false;
   if (v_grad && v_grad->dims() != expanded_dims && v_grad->numel() != 1)

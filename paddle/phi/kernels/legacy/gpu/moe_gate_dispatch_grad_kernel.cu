@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "paddle/phi/kernels/legacy/gpu/moe_gate_dispatch_grad_kernel.h"
 #include <vector>
 #include "paddle/phi/backends/gpu/gpu_context.h"
 #include "paddle/phi/core/dense_tensor.h"
@@ -125,10 +126,9 @@ void MoeGateDispatchGradKernel(const Context& dev_ctx,
   const std::vector<int32_t> axis = {1, 0};
 
   DenseTensor t_scatter_index;
-  phi::Transpose<int, Context>(dev_ctx, scatter_index, axis, &t_scatter_index);
+  Transpose<int, Context>(dev_ctx, scatter_index, axis, &t_scatter_index);
   DenseTensor t_scatter_index_;
-  phi::ContiguousKernel<int, Context>(
-      dev_ctx, t_scatter_index, &t_scatter_index_);
+  ContiguousKernel<int, Context>(dev_ctx, t_scatter_index, &t_scatter_index_);
   const DenseTensor t_scatter_index__ = t_scatter_index_;
 
   dev_ctx.template Alloc<T>(x_grad);

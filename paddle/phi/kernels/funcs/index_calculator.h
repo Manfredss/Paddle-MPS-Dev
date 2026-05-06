@@ -24,12 +24,11 @@
 #include <vector>
 
 #include "paddle/phi/kernels/primitive/kernel_primitives.h"
-namespace kps = phi::kps;
 
 namespace phi {
 namespace funcs {
 
-constexpr int kMaxRank = phi::DDim::kMaxRank;
+constexpr int kMaxRank = DDim::kMaxRank;
 
 namespace details {
 // Convert dims from vector to array

@@ -152,7 +152,7 @@ inline static PyObject *eval_custom_code_py311_plus(PyThreadState *tstate,
     }
 #if PY_3_14_PLUS
     if (PyStackRef_IsNull(fastlocals_old[i])) {
-      fastlocals_new[PyLong_AsSize_t(index)] = PyStackRef_NULL;
+      fastlocals_new[PyLong_AsSize_t(index)] = fastlocals_old[i];
     } else {
       fastlocals_new[PyLong_AsSize_t(index)] =
           PyStackRef_DUP(fastlocals_old[i]);
@@ -319,12 +319,11 @@ static PyObject *_custom_eval_frame(PyThreadState *tstate,
 #if PY_3_13_PLUS
     frame_proxy->locals = f_locals;
 #endif
-    PyObject *args = Py_BuildValue("(O)", frame_proxy);
+    PyObject *arg = frame_proxy;
 #else
-    PyObject *args = Py_BuildValue("(O)", frame);
+    PyObject *arg = frame;
 #endif
-    PyObject *result = PyObject_CallObject(callback, args);
-    Py_DECREF(args);
+    PyObject *result = PyObject_CallOneArg(callback, arg);
     if (result == NULL) {
 #if PY_3_12_PLUS
 #if PY_3_13_PLUS

@@ -26,8 +26,8 @@ void IndexEleGetGradAccKernel(
     const char* in_ptr,
     char* out_ptr,
     const std::array<char*, DDim::kMaxRank> index_ptrs,
-    const std::array<int64_t, phi::DDim::kMaxRank + 1> sizes,
-    const std::array<int64_t, phi::DDim::kMaxRank + 1> strides,
+    const std::array<int64_t, DDim::kMaxRank + 1> sizes,
+    const std::array<int64_t, DDim::kMaxRank + 1> strides,
     int num_indices,
     offset_calc_t offset_calc) {
   for (int64_t idx = 0; idx < N; idx++) {
@@ -46,7 +46,7 @@ void IndexEleGetGradAccKernel(
 }
 
 template <typename T, typename IndexT = int>
-void CPUIndexElementwiseGetGrad(const phi::CPUContext& dev_ctx,
+void CPUIndexElementwiseGetGrad(const CPUContext& dev_ctx,
                                 const DenseTensor& input,
                                 const DenseTensor& value,
                                 const std::vector<const DenseTensor*>& index,
@@ -62,8 +62,8 @@ void CPUIndexElementwiseGetGrad(const phi::CPUContext& dev_ctx,
   std::vector<int64_t> shape_tmp;
   std::vector<int64_t> stride_tmp;
   funcs::cal_shape_stride(index_dims, &num_indices, &shape_tmp, &stride_tmp);
-  auto sizes = std::array<int64_t, phi::DDim::kMaxRank + 1>{};
-  auto strides = std::array<int64_t, phi::DDim::kMaxRank + 1>{};
+  auto sizes = std::array<int64_t, DDim::kMaxRank + 1>{};
+  auto strides = std::array<int64_t, DDim::kMaxRank + 1>{};
   for (int64_t i = 0; i < num_indices; i++) {
     sizes[i] = index_dims[i];
     strides[i] = index_strides[i];
@@ -74,13 +74,13 @@ void CPUIndexElementwiseGetGrad(const phi::CPUContext& dev_ctx,
   std::array<std::vector<int64_t>, 3> strides_vec;
   funcs::IndexPutStride<3>(input_dims,
                            input_strides,
-                           phi::SizeOf(input.dtype()),
-                           common::vectorize<int64_t>(value.dims()),
-                           common::vectorize<int64_t>(value.strides()),
-                           phi::SizeOf(value.dtype()),
+                           SizeOf(input.dtype()),
+                           vectorize<int64_t>(value.dims()),
+                           vectorize<int64_t>(value.strides()),
+                           SizeOf(value.dtype()),
                            shape_tmp,
                            stride_tmp,
-                           phi::SizeOf(index[0]->dtype()),
+                           SizeOf(index[0]->dtype()),
                            &desired_shape,
                            &strides_array,
                            &numel,
@@ -133,19 +133,19 @@ void IndexElementwiseGetGradKernel(const Context& dev_ctx,
                                    const bool is_combined,
                                    DenseTensor* x_grad) {
   dev_ctx.template Alloc<T>(x_grad);
-  auto dxt = phi::EigenVector<T>::Flatten(*x_grad);
+  auto dxt = EigenVector<T>::Flatten(*x_grad);
   auto& place = *dev_ctx.eigen_device();
   dxt.device(place) = dxt.constant(static_cast<T>(0));
   if (out_grad.numel() == 0) return;
   const auto& index_type = index[0]->dtype();
-  PADDLE_ENFORCE_EQ(index_type == phi::DataType::INT64,
+  PADDLE_ENFORCE_EQ(index_type == DataType::INT64,
                     true,
                     common::errors::InvalidArgument(
                         "Index holds the wrong type, it holds [%s], but "
                         "desires to be [%s].",
                         index_type,
-                        phi::DataType::INT32,
-                        phi::DataType::INT64));
+                        DataType::INT32,
+                        DataType::INT64));
   CPUIndexElementwiseGetGrad<T, int64_t>(dev_ctx,
                                          x,
                                          out_grad,

@@ -32,19 +32,18 @@ template <typename T,
           typename TreeT = int,
           typename OutT = int>
 void TDMSamplerInner(const Context &dev_ctx,
-                     const phi::DenseTensor &input_tensor,
-                     const phi::DenseTensor &travel_dense_tensor,
-                     const phi::DenseTensor &layer_dense_tensor,
+                     const DenseTensor &input_tensor,
+                     const DenseTensor &travel_dense_tensor,
+                     const DenseTensor &layer_dense_tensor,
                      bool output_positive,
                      std::vector<int> neg_samples_num_list,
                      std::vector<int> layer_offset,
                      int seed,
-                     phi::DenseTensor *out,
-                     phi::DenseTensor *label,
-                     phi::DenseTensor *mask) {
+                     DenseTensor *out,
+                     DenseTensor *label,
+                     DenseTensor *mask) {
   // get dimension
   int64_t input_ids_num = input_tensor.numel();
-  // TODO(large-tensor): downstream functors may still use int
 
   VLOG(3) << "TDM: input ids nums: " << input_ids_num;
   auto layer_nums = neg_samples_num_list.size();
@@ -57,7 +56,7 @@ void TDMSamplerInner(const Context &dev_ctx,
   }
   VLOG(3) << "TDM: sample res length: " << sample_res_length;
 
-  auto travel_dim = common::vectorize<int>(travel_dense_tensor.dims());
+  auto travel_dim = vectorize<int>(travel_dense_tensor.dims());
   auto total_sample_nums = input_ids_num * sample_res_length;
 
   // get all data
@@ -83,7 +82,7 @@ void TDMSamplerInner(const Context &dev_ctx,
   }
   VLOG(3) << "TDM: get sampler ";
 
-  for (int i = 0; i < input_ids_num; ++i) {
+  for (int64_t i = 0; i < input_ids_num; ++i) {
     // find leaf node travel path
     T input_id = input_data[i];
     PADDLE_ENFORCE_LT(
@@ -106,7 +105,10 @@ void TDMSamplerInner(const Context &dev_ctx,
             input_id));
 
     VLOG(3) << "TDM: input id: " << input_id;
-    int start_offset = static_cast<int>(input_id * layer_nums);
+    // TODO(large-tensor): array index not support int64
+    int64_t start_offset_val = input_id * layer_nums;
+    PADDLE_ENFORCE_LE_INT_MAX(start_offset_val, "input_id * layer_nums");
+    int start_offset = static_cast<int>(start_offset_val);
     VLOG(3) << "TDM: Start offset(input_id * layer_nums): " << start_offset;
     // nce sample, layer by layer
     int offset = 0;
@@ -190,11 +192,11 @@ void TDMSamplerInner(const Context &dev_ctx,
                 << mask_vec[i * sample_res_length + offset];
         offset += 1;
       }
-      std::vector<int> sample_res_vec{};
+      std::vector<int64_t> sample_res_vec{};
       // Sampling at layer, until samples enough
       for (int sample_index = 0; sample_index < sample_num; ++sample_index) {
         // Avoid sampling to positive samples
-        int sample_res = 0;
+        int64_t sample_res = 0;
         do {
           sample_res = sampler_vec[layer_idx]->Sample();
         } while (positive_node_id ==
@@ -260,53 +262,52 @@ void TDMSamplerKernel(const Context &dev_ctx,
                       DenseTensor *out,
                       DenseTensor *labels,
                       DenseTensor *mask) {
-  const auto &input_type = phi::TransToProtoVarType(x.dtype());
+  const auto &input_type = x.dtype();
   bool input_type_match =
-      input_type == ProtoDataType::INT32 || input_type == ProtoDataType::INT64;
+      input_type == DataType::INT32 || input_type == DataType::INT64;
   PADDLE_ENFORCE_EQ(input_type_match,
                     true,
                     common::errors::InvalidArgument(
                         "Input(X) holds the wrong type, it holds %s, but "
                         "desires to be %s or %s",
-                        phi::DataTypeToString(x.dtype()),
-                        phi::DataTypeToString(DataType::INT32),
-                        phi::DataTypeToString(DataType::INT64)));
+                        DataTypeToString(x.dtype()),
+                        DataTypeToString(DataType::INT32),
+                        DataTypeToString(DataType::INT64)));
 
-  const auto &travel_type = phi::TransToProtoVarType(travel.dtype());
-  bool travel_type_match = travel_type == ProtoDataType::INT32 ||
-                           travel_type == ProtoDataType::INT64;
+  const auto &travel_type = travel.dtype();
+  bool travel_type_match =
+      travel_type == DataType::INT32 || travel_type == DataType::INT64;
   PADDLE_ENFORCE_EQ(travel_type_match,
                     true,
                     common::errors::InvalidArgument(
                         "Input(Travel) holds the wrong type, it holds %s, but "
                         "desires to be %s or %s",
-                        phi::DataTypeToString(travel.dtype()),
-                        phi::DataTypeToString(DataType::INT32),
-                        phi::DataTypeToString(DataType::INT64)));
+                        DataTypeToString(travel.dtype()),
+                        DataTypeToString(DataType::INT32),
+                        DataTypeToString(DataType::INT64)));
 
-  const auto &layer_type = phi::TransToProtoVarType(layer.dtype());
+  const auto &layer_type = layer.dtype();
   bool layer_type_match =
-      layer_type == ProtoDataType::INT32 || layer_type == ProtoDataType::INT64;
+      layer_type == DataType::INT32 || layer_type == DataType::INT64;
   PADDLE_ENFORCE_EQ(layer_type_match,
                     true,
                     common::errors::InvalidArgument(
                         "Input(Layer) holds the wrong type, it holds %s, but "
                         "desires to be %s or %s",
-                        phi::DataTypeToString(layer.dtype()),
-                        phi::DataTypeToString(DataType::INT32),
-                        phi::DataTypeToString(DataType::INT64)));
+                        DataTypeToString(layer.dtype()),
+                        DataTypeToString(DataType::INT32),
+                        DataTypeToString(DataType::INT64)));
   PADDLE_ENFORCE_EQ(travel_type,
                     layer_type,
                     common::errors::InvalidArgument(
                         "Input(Travel) must holds the same type with "
                         "Input(Layer), but Travel holds %s, and Layer holds %s",
-                        phi::DataTypeToString(travel.dtype()),
-                        phi::DataTypeToString(layer.dtype())));
+                        DataTypeToString(travel.dtype()),
+                        DataTypeToString(layer.dtype())));
 
-  auto output_type = static_cast<ProtoDataType>(dtype);
+  auto output_type = TransToPhiDataType(dtype);
 
-  if (travel_type == ProtoDataType::INT32 &&
-      output_type == ProtoDataType::INT32) {
+  if (travel_type == DataType::INT32 && output_type == DataType::INT32) {
     TDMSamplerInner<T, Context, int, int>(dev_ctx,
                                           x,
                                           travel,
@@ -318,8 +319,7 @@ void TDMSamplerKernel(const Context &dev_ctx,
                                           out,
                                           labels,
                                           mask);
-  } else if (travel_type == ProtoDataType::INT64 &&
-             output_type == ProtoDataType::INT32) {
+  } else if (travel_type == DataType::INT64 && output_type == DataType::INT32) {
     TDMSamplerInner<T, Context, int64_t, int>(dev_ctx,
                                               x,
                                               travel,
@@ -331,8 +331,7 @@ void TDMSamplerKernel(const Context &dev_ctx,
                                               out,
                                               labels,
                                               mask);
-  } else if (travel_type == ProtoDataType::INT32 &&
-             output_type == ProtoDataType::INT64) {
+  } else if (travel_type == DataType::INT32 && output_type == DataType::INT64) {
     TDMSamplerInner<T, Context, int, int64_t>(dev_ctx,
                                               x,
                                               travel,
@@ -344,8 +343,7 @@ void TDMSamplerKernel(const Context &dev_ctx,
                                               out,
                                               labels,
                                               mask);
-  } else if (travel_type == ProtoDataType::INT64 &&
-             output_type == ProtoDataType::INT64) {
+  } else if (travel_type == DataType::INT64 && output_type == DataType::INT64) {
     TDMSamplerInner<T, Context, int64_t, int64_t>(dev_ctx,
                                                   x,
                                                   travel,

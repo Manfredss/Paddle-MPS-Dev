@@ -82,7 +82,7 @@ __global__ void MinMaxWithIndexKernel(const int64_t height,     // n * h
 }
 
 template <typename T, typename IndType, class Reducer, typename IndexType>
-void ComputeMinMaxWithIndex(const phi::GPUContext& dev_ctx,
+void ComputeMinMaxWithIndex(const GPUContext& dev_ctx,
                             const DenseTensor& input,
                             DenseTensor* values,
                             DenseTensor* indices,
@@ -177,10 +177,10 @@ struct VisitDataCudaMinMaxWithIndexFunctor {
 
   template <typename IndType>
   void apply() const {
-    phi::DDim x_dims;
+    DDim x_dims;
     int new_axis = axis;
     if (flatten) {
-      x_dims = common::make_ddim({x.numel()});
+      x_dims = make_ddim({x.numel()});
       // if flatten, the axis just as 0
       new_axis = 0;
     } else {
@@ -196,8 +196,8 @@ struct VisitDataCudaMinMaxWithIndexFunctor {
     if (x.dims().size() == 0) {
       dev_ctx.template Alloc<T>(val_out);
       dev_ctx.template Alloc<IndType>(ind_out);
-      phi::funcs::set_constant(dev_ctx, ind_out, static_cast<IndType>(0));
-      phi::Copy<Context>(dev_ctx, x, dev_ctx.GetPlace(), false, val_out);
+      funcs::set_constant(dev_ctx, ind_out, static_cast<IndType>(0));
+      Copy<Context>(dev_ctx, x, dev_ctx.GetPlace(), false, val_out);
       return;
     }
 
@@ -239,7 +239,7 @@ void MinMaxWithIndexOpCUDAKernel(const Context& dev_ctx,
       common::errors::InvalidArgument(
           "(min/max)_with_index input numel must > 0, bug got %d", x.numel()));
   phi::VisitDataTypeTiny(
-      phi::DataType::INT64,
+      DataType::INT64,
       VisitDataCudaMinMaxWithIndexFunctor<Context, T, Reducer>(
           dev_ctx, x, axis.to<int64_t>(), keepdims, flatten, val_out, ind_out));
 }

@@ -13,16 +13,8 @@
 // limitations under the License.
 
 #include <algorithm>
-#ifdef __NVCC__
-#include <cub/cub.cuh>
-#endif
-
-#ifdef __HIPCC__
-#include <hipcub/hipcub.hpp>
-namespace cub = hipcub;
-#endif
-
 #include "paddle/phi/core/kernel_registry.h"
+#include "paddle/phi/kernels/funcs/cub.h"
 #include "paddle/phi/kernels/funcs/math.h"
 #include "paddle/phi/kernels/impl/sequence_softmax_kernel_impl.h"
 
@@ -64,7 +56,7 @@ __global__ void sequence_softmax_kernel(const T *in_data,
     T sum_data = 0;
     for (size_t tid = threadIdx.x; tid < span; tid += blockDim.x) {
       T ele = in_data[start + tid];
-      sum_data += phi::funcs::real_exp(ele - shared_max_data);
+      sum_data += funcs::real_exp(ele - shared_max_data);
     }
     sum_data =
         BlockReduce<T, BlockDim>(temp_storage).Reduce(sum_data, cub::Sum());
@@ -76,17 +68,17 @@ __global__ void sequence_softmax_kernel(const T *in_data,
     // get final resit
     for (size_t tid = threadIdx.x; tid < span; tid += blockDim.x) {
       T ele = in_data[start + tid];
-      ele = phi::funcs::real_exp(ele - shared_max_data) / shared_sum_data;
+      ele = funcs::real_exp(ele - shared_max_data) / shared_sum_data;
       out_data[start + tid] = ele;
     }
   }
 }
 
 template <typename T>
-struct SequenceSoftmaxFunctor<phi::GPUContext, T> {
-  void operator()(const phi::GPUContext &dev_ctx,
+struct SequenceSoftmaxFunctor<GPUContext, T> {
+  void operator()(const GPUContext &dev_ctx,
                   const DenseTensor &x,
-                  const phi::Vector<size_t> &ref_lod, /*referenced lod*/
+                  const Vector<size_t> &ref_lod, /*referenced lod*/
                   DenseTensor *out) {
     int height = ref_lod.size() - 1;
 
@@ -97,7 +89,7 @@ struct SequenceSoftmaxFunctor<phi::GPUContext, T> {
 
     dim3 block_size(thread_x);
     dim3 grid_size(max_blocks);
-    phi::MixVector<size_t> mixv_ref_lod(&ref_lod);
+    MixVector<size_t> mixv_ref_lod(&ref_lod);
     sequence_softmax_kernel<T, kThreadsPerBlock>
         <<<grid_size, block_size, 0, dev_ctx.stream()>>>(
             x.data<T>(),

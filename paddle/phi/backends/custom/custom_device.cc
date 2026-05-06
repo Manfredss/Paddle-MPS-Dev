@@ -29,7 +29,24 @@ static bool operator==(const C_Device_st& d1, const C_Device_st& d2) {
   return d1.id == d2.id;
 }
 
+static void ConvertEnum(const void* in, void* out) {
+  int value = *(const int*)in;
+  *reinterpret_cast<int*>(out) = value;
+}
+
 namespace phi {
+
+inline void ConvertCToCpp(C_GraphHookManager* c_mgr,
+                          graph::GraphHookManager* cpp_mgr) {
+  for (size_t i = 0; i < c_mgr->size; i++) {
+    auto fn_c = c_mgr->hooks[i];
+    void* userdata = c_mgr->user_data[i];
+
+    cpp_mgr->hooks.emplace_back(([fn_c, userdata](graph::CUDAGraphExec_t exec) {
+      fn_c(reinterpret_cast<C_GraphExec>(exec), userdata);
+    }));
+  }
+}
 
 #define INTERFACE_UNIMPLEMENT                 \
   PADDLE_THROW(common::errors::Unimplemented( \
@@ -617,6 +634,58 @@ class CustomDevice : public DeviceInterface {
     return threads_per_block;
   }
 
+  size_t GetMaxSharedMemPerBlock(size_t dev_id) override {
+    const auto device = &devices_pool[dev_id];
+    size_t shared_mem_per_block = 0;
+    if (pimpl_->get_max_shared_mem_per_block) {
+      pimpl_->get_max_shared_mem_per_block(device, &shared_mem_per_block);
+    }
+    VLOG(10) << Type() << " get max shared mem per block "
+             << shared_mem_per_block;
+    return shared_mem_per_block;
+  }
+
+  size_t GetMaxBlocksPerMultiProcessor(size_t dev_id) override {
+    const auto device = &devices_pool[dev_id];
+    size_t blocks_per_mp = 0;
+    if (pimpl_->get_max_blocks_per_mp) {
+      pimpl_->get_max_blocks_per_mp(device, &blocks_per_mp);
+    }
+    VLOG(10) << Type() << " get blocks per multiprocessor " << blocks_per_mp;
+    return blocks_per_mp;
+  }
+
+  size_t GetWarpSize(size_t dev_id) override {
+    const auto device = &devices_pool[dev_id];
+    size_t warp_size = 0;
+    if (pimpl_->get_warp_size) {
+      pimpl_->get_warp_size(device, &warp_size);
+    }
+    VLOG(10) << Type() << " get warp size " << warp_size;
+    return warp_size;
+  }
+
+  size_t GetMaxRegistersPerMultiProcessor(size_t dev_id) override {
+    const auto device = &devices_pool[dev_id];
+    size_t registers_per_mp = 0;
+    if (pimpl_->get_max_registers_per_mp) {
+      pimpl_->get_max_registers_per_mp(device, &registers_per_mp);
+    }
+    VLOG(10) << Type() << " get registers per multiprocessor "
+             << registers_per_mp;
+    return registers_per_mp;
+  }
+
+  size_t GetPreferredVectorWidth(size_t dev_id) override {
+    const auto device = &devices_pool[dev_id];
+    size_t vector_width = 0;
+    if (pimpl_->get_vector_width) {
+      pimpl_->get_vector_width(device, &vector_width);
+    }
+    VLOG(10) << Type() << " get preferred vector width " << vector_width;
+    return vector_width;
+  }
+
   std::array<unsigned int, 3> GetMaxGridDimSize(size_t dev_id) override {
     const auto device = &devices_pool[dev_id];
     std::array<unsigned int, 3> grid_dim_size = {0, 0, 0};
@@ -626,6 +695,17 @@ class CustomDevice : public DeviceInterface {
     VLOG(10) << Type() << " get max grid dim size [" << grid_dim_size[0] << ", "
              << grid_dim_size[1] << ", " << grid_dim_size[2] << "]";
     return grid_dim_size;
+  }
+
+  std::array<unsigned int, 3> GetMaxBlockDimSize(size_t dev_id) override {
+    const auto device = &devices_pool[dev_id];
+    std::array<unsigned int, 3> block_dim_size = {0, 0, 0};
+    if (pimpl_->get_max_block_dim_size) {
+      pimpl_->get_max_block_dim_size(device, &block_dim_size);
+    }
+    VLOG(10) << Type() << " get max block dim size [" << block_dim_size[0]
+             << ", " << block_dim_size[1] << ", " << block_dim_size[2] << "]";
+    return block_dim_size;
   }
 
   bool IsFloat16Supported(size_t dev_id) {
@@ -659,7 +739,7 @@ class CustomDevice : public DeviceInterface {
   }
 
   void* InitEigenDevice(const Place& place,
-                        phi::stream::stream_t stream,
+                        stream::stream_t stream,
                         phi::Allocator* allocator) override {
     void* eigen_device = nullptr;
     Place place_t = place;
@@ -956,9 +1036,11 @@ class CustomDevice : public DeviceInterface {
                                 reinterpret_cast<C_Stream>(stream)));
         }
       }
-      const phi::stream::Stream stream_wrapper(
-          Place(AllocationType::CUSTOM, Type()), stream);
-      MemoryCopyD2D(rank,
+      const stream::Stream stream_wrapper(Place(AllocationType::CUSTOM, Type()),
+                                          stream);
+
+      int current_device_id = GetDevice();
+      MemoryCopyD2D(current_device_id,
                     recv_buf[rank],
                     send_buf[rank],
                     send_count[rank] * phi::SizeOf(send_dtype[rank]),
@@ -1045,7 +1127,7 @@ class CustomDevice : public DeviceInterface {
 
   void InitBlasHandle(size_t dev_id,
                       void** blas_handle,
-                      phi::stream::stream_t stream) override {
+                      stream::stream_t stream) override {
     const auto device = &devices_pool[dev_id];
     if (pimpl_->init_blas_handle) {
       PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(
@@ -1087,6 +1169,162 @@ class CustomDevice : public DeviceInterface {
       PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(pimpl_->destroy_blaslt_handle(
           device, reinterpret_cast<C_BLASLtHandle>(blaslt_handle)));
     }
+  }
+
+  void InitDnnHandle(size_t dev_id,
+                     void** dnn_handle,
+                     phi::stream::stream_t stream) override {
+    const auto device = &devices_pool[dev_id];
+    if (pimpl_->init_dnn_handle) {
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(
+          pimpl_->init_dnn_handle(device,
+                                  reinterpret_cast<C_DNNHandle*>(dnn_handle),
+                                  reinterpret_cast<C_Stream>(stream)));
+    }
+  }
+
+  void DestroyDnnHandle(size_t dev_id, void* dnn_handle) override {
+    const auto device = &devices_pool[dev_id];
+    if (pimpl_->destroy_dnn_handle) {
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(pimpl_->destroy_dnn_handle(
+          device, reinterpret_cast<C_DNNHandle>(dnn_handle)));
+    }
+  }
+
+  void CUDAStreamBeginCapture(size_t dev_id,
+                              stream::stream_t stream,
+                              graph::streamCaptureMode mode) {
+    const auto device = &devices_pool[dev_id];
+    if (pimpl_->cuda_stream_begin_capture) {
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(pimpl_->cuda_stream_begin_capture(
+          device,
+          reinterpret_cast<C_Stream>(stream),
+          static_cast<C_StreamCaptureMode>(mode)));
+    }
+  }
+
+  void CudaStreamEndCapture(size_t dev_id,
+                            stream::stream_t stream,
+                            graph::CUDAGraph_t* pGraph) {
+    const auto device = &devices_pool[dev_id];
+    if (pimpl_->cuda_stream_end_captrue) {
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(pimpl_->cuda_stream_end_captrue(
+          device,
+          reinterpret_cast<C_Stream>(stream),
+          reinterpret_cast<C_CudaGraph*>(pGraph)));
+    }
+  }
+
+  void CudaGraphLaunch(size_t dev_id,
+                       graph::CUDAGraphExec_t exec,
+                       stream::stream_t stream) {
+    const auto device = &devices_pool[dev_id];
+    if (pimpl_->cuda_graph_launch) {
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(
+          pimpl_->cuda_graph_launch(device,
+                                    reinterpret_cast<C_GraphExec>(exec),
+                                    reinterpret_cast<C_Stream>(stream)));
+    }
+  }
+
+  void CudaGraphDestroy(graph::CUDAGraph_t graph) {
+    if (pimpl_->cuda_graph_destroy) {
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(
+          pimpl_->cuda_graph_destroy(reinterpret_cast<C_CudaGraph>(graph)));
+    }
+  }
+
+  void CudaGraphExecDestroy(graph::CUDAGraphExec_t graphExec) {
+    if (pimpl_->cuda_graph_exec_destroy) {
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(pimpl_->cuda_graph_exec_destroy(
+          reinterpret_cast<C_GraphExec>(graphExec)));
+    }
+  }
+
+  void CudaGraphInstantiate(graph::CUDAGraphExec_t* pGraphExec,
+                            graph::CUDAGraph_t* pGraph,
+                            void** pErrorNode,
+                            char* pLogBuffer,
+                            size_t bufferSize) {
+    if (pimpl_->cuda_graph_instantiate) {
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(pimpl_->cuda_graph_instantiate(
+          reinterpret_cast<C_GraphExec*>(pGraphExec),
+          reinterpret_cast<C_CudaGraph*>(pGraph),
+          pErrorNode,
+          pLogBuffer,
+          bufferSize));
+    }
+  }
+
+  void CudaGraphGetNodes(graph::CUDAGraph_t graph,
+                         graph::CUDAGraphNode_t* pNodes,
+                         size_t* numNodes) {
+    if (pimpl_->cuda_graph_get_nodes) {
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(pimpl_->cuda_graph_get_nodes(
+          reinterpret_cast<C_CudaGraph>(graph),
+          reinterpret_cast<C_CudaGraphNode*>(pNodes),
+          numNodes));
+    }
+  }
+
+  void CudaStreamGetCaptureInfo(
+      size_t dev_id,
+      stream::stream_t stream,
+      graph::streamCaptureStatus* captureStatus_out,
+      unsigned long long* id_out = nullptr,  // NOLINT
+      graph::CUDAGraph_t* graph_out = nullptr,
+      graph::CUDAGraphNode_t* dependencies_out = nullptr,
+      void** edgeData_out = nullptr,
+      size_t* numDependencies_out = nullptr) {
+    const auto device = &devices_pool[dev_id];
+    if (pimpl_->cuda_graph_get_nodes) {
+      C_StreamCaptureStatus c_status = C_StreamCaptureStatusNone;
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(pimpl_->cuda_stream_capture_info(
+          device,
+          reinterpret_cast<C_Stream>(stream),
+          &c_status,
+          id_out,
+          reinterpret_cast<C_CudaGraph*>(graph_out),
+          reinterpret_cast<C_CudaGraphNode*>(dependencies_out),
+          edgeData_out,
+          numDependencies_out));
+      ConvertEnum(&c_status, captureStatus_out);
+    }
+  }
+
+  void GetParameterSetterForExecGraph(graph::CUDAGraph_t graph,
+                                      graph::GraphHookManager* hook) {
+    if (pimpl_->get_parameter_setter_for_exec_graph) {
+      C_GraphHookManager c_hook;
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(
+          pimpl_->get_parameter_setter_for_exec_graph(
+              reinterpret_cast<C_CudaGraph>(graph), &c_hook));
+      ConvertCToCpp(&c_hook, hook);
+    }
+  }
+
+  void CudaGraphDebugDotPrint(graph::CUDAGraph_t graph,
+                              const char* path,
+                              unsigned int flags) {
+    if (pimpl_->cuda_graph_debug_dot_print) {
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(pimpl_->cuda_graph_debug_dot_print(
+          reinterpret_cast<C_CudaGraph>(graph), path, flags));
+    }
+  }
+
+  void CudaThreadExchangeStreamCaptureMode(graph::streamCaptureMode* mode) {
+    if (pimpl_->cuda_thread_exchange_stream_capthure_mode) {
+      C_StreamCaptureMode c_mode = C_StreamCaptureModeGlobal;
+      ConvertEnum(mode, &c_mode);
+      PADDLE_ENFORCE_CUSTOM_DEVICE_SUCCESS(
+          pimpl_->cuda_thread_exchange_stream_capthure_mode(&c_mode));
+      ConvertEnum(&c_mode, mode);
+    }
+  }
+
+  // Returns the CINN plugin interface registered by the vendor for this device.
+  C_CinnInterface* GetCinnInterface() override {
+    return pimpl_->cinn_interface;
   }
 
  private:
@@ -1186,7 +1424,13 @@ bool ValidCustomCustomRuntimeParams(const CustomRuntimeParams* params) {
   CHECK_INTERFACE(get_multi_process, false);
   CHECK_INTERFACE(get_max_threads_per_mp, false);
   CHECK_INTERFACE(get_max_threads_per_block, false);
+  CHECK_INTERFACE(get_max_shared_mem_per_block, false);
+  CHECK_INTERFACE(get_max_blocks_per_mp, false);
+  CHECK_INTERFACE(get_warp_size, false);
+  CHECK_INTERFACE(get_max_registers_per_mp, false);
+  CHECK_INTERFACE(get_vector_width, false);
   CHECK_INTERFACE(get_max_grid_dim_size, false);
+  CHECK_INTERFACE(get_max_block_dim_size, false);
   CHECK_INTERFACE(init_eigen_device, false);
   CHECK_INTERFACE(destroy_eigen_device, false);
 
@@ -1212,6 +1456,27 @@ bool ValidCustomCustomRuntimeParams(const CustomRuntimeParams* params) {
   CHECK_INTERFACE(profiler_start_tracing, false);
   CHECK_INTERFACE(profiler_stop_tracing, false);
   CHECK_INTERFACE(profiler_collect_trace_data, false);
+
+  CHECK_INTERFACE(init_blas_handle, false);
+  CHECK_INTERFACE(destroy_blas_handle, false);
+  CHECK_INTERFACE(blas_set_math_mode, false);
+  CHECK_INTERFACE(init_blaslt_handle, false);
+  CHECK_INTERFACE(destroy_blaslt_handle, false);
+  CHECK_INTERFACE(init_dnn_handle, false);
+  CHECK_INTERFACE(destroy_dnn_handle, false);
+
+  CHECK_INTERFACE(cuda_stream_begin_capture, false);
+  CHECK_INTERFACE(cuda_stream_end_captrue, false);
+  CHECK_INTERFACE(cuda_graph_launch, false);
+  CHECK_INTERFACE(cuda_graph_destroy, false);
+  CHECK_INTERFACE(cuda_graph_exec_destroy, false);
+  CHECK_INTERFACE(cuda_graph_instantiate, false);
+  CHECK_INTERFACE(cuda_graph_get_nodes, false);
+  CHECK_INTERFACE(cuda_stream_capture_info, false);
+  CHECK_INTERFACE(get_parameter_setter_for_exec_graph, false);
+  CHECK_INTERFACE(cuda_graph_debug_dot_print, false);
+  CHECK_INTERFACE(cuda_thread_exchange_stream_capthure_mode, false);
+
   return true;
 #undef CHECK_INTERFACE
 }

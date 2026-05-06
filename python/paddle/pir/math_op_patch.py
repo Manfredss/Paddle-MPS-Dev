@@ -33,6 +33,7 @@ from paddle.utils.decorator_utils import (
 from . import Value
 
 if TYPE_CHECKING:
+    from paddle import Tensor
     from paddle._typing import DTypeLike, PlaceLike, ShapeLike
 
 
@@ -162,12 +163,12 @@ def monkey_patch_value():
         Examples:
             In Static Graph Mode:
 
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> paddle.enable_static()
 
-                >>> x = paddle.static.data(name="x", shape=[2,2], dtype='float32')
+                >>> x = paddle.static.data(name="x", shape=[2, 2], dtype='float32')
                 >>> y = x.cpu()
         """
 
@@ -192,12 +193,12 @@ def monkey_patch_value():
         Examples:
             In Static Graph Mode:
 
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> paddle.enable_static()
 
-                >>> x = paddle.static.data(name="x", shape=[2,2], dtype='float32')
+                >>> x = paddle.static.data(name="x", shape=[2, 2], dtype='float32')
                 >>> y = x.cpu()
                 >>> z = y.cuda()
         """
@@ -207,7 +208,7 @@ def monkey_patch_value():
         if blocking is not True:
             warnings.warn("blocking is not supported, and it will be ignored.")
 
-        # 1 means cuda place, see paddle/phi/kernels/memcpy_kernel.cc
+        # 1 means cuda/xpu/custom_device place, see paddle/phi/kernels/memcpy_kernel.cc
         return _C_ops.memcpy(self, 1)
 
     @property
@@ -229,6 +230,26 @@ def monkey_patch_value():
         else:
             expected_place = framework._current_expected_place_()
             return isinstance(expected_place, framework.core.CUDAPlace)
+
+    @property
+    def is_cpu(self):
+        """
+        Tensor don't have 'is_cpu' interface in static graph mode
+        But this interface can greatly facilitate dy2static.
+        So we give a warning here and return None.
+        """
+        warnings.warn(
+            "Tensor do not have 'is_cpu' interface for pir graph mode, try not to use it."
+        )
+        from paddle import framework
+
+        if hasattr(self, 'place') and isinstance(
+            self.place, framework.core.CPUPlace
+        ):
+            return True
+        else:
+            expected_place = framework._current_expected_place_()
+            return isinstance(expected_place, framework.core.CPUPlace)
 
     @property
     def place(self):
@@ -283,7 +304,7 @@ def monkey_patch_value():
             the dimension
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
 
@@ -305,7 +326,7 @@ def monkey_patch_value():
             the dimension
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
 
@@ -327,7 +348,7 @@ def monkey_patch_value():
             the dimension
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
 
@@ -417,17 +438,16 @@ def monkey_patch_value():
         Examples:
             In Static Graph Mode:
 
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> paddle.enable_static()
                 >>> startup_prog = paddle.static.Program()
                 >>> main_prog = paddle.static.Program()
                 >>> with paddle.static.program_guard(startup_prog, main_prog):
-                ...     original_value = paddle.static.data(name = "new_value", shape=[2,2], dtype='float32')
+                ...     original_value = paddle.static.data(name="new_value", shape=[2, 2], dtype='float32')
                 ...     new_value = original_value.astype('int64')
                 ...     print(f"new value's dtype is: {new_value.dtype}")
-                ...
                 new Tensor's dtype is: paddle.int64
 
         """
@@ -618,6 +638,15 @@ def monkey_patch_value():
         """
         return paddle.numel(self)
 
+    def nelement(self):
+        """
+        Returns the number of elements for current Tensor, which is a int64 Tensor with shape [] . Alias for attribute `size`.
+
+        Returns:
+            Tensor, the number of elements for current Tensor
+        """
+        return paddle.numel(self)
+
     @property
     def _T_(self):
         """
@@ -627,7 +656,7 @@ def monkey_patch_value():
         If `n` is the dimensions of `x` , `x.T` is equivalent to `x.transpose([n-1, n-2, ..., 0])`.
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> paddle.enable_static()
@@ -656,7 +685,7 @@ def monkey_patch_value():
         If `n` is the dimensions of `x` , `x.mT` is equivalent to `x.transpose([0, 1, ..., n-1, n-2])`.
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> paddle.enable_static()
@@ -696,7 +725,7 @@ def monkey_patch_value():
         By default, the returned Tensor has the same dtype and place as this tensor.
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> paddle.enable_static()
@@ -743,7 +772,7 @@ def monkey_patch_value():
         By default, the returned Tensor has the same dtype and place as this tensor.
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> paddle.enable_static()
@@ -789,7 +818,7 @@ def monkey_patch_value():
         By default, the returned Tensor has the same dtype and place as this tensor.
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> paddle.enable_static()
@@ -836,7 +865,7 @@ def monkey_patch_value():
         By default, the returned Tensor has the same dtype and place as this tensor.
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> paddle.enable_static()
@@ -983,7 +1012,7 @@ def monkey_patch_value():
             Tensor, The cloned Tensor.
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
 
@@ -1010,7 +1039,7 @@ def monkey_patch_value():
         Returns:  None
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> import numpy as np
@@ -1190,10 +1219,10 @@ def monkey_patch_value():
             Tensor: self
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
-                >>> x = paddle.to_tensor([1,2,3])
+                >>> x = paddle.to_tensor([1, 2, 3])
                 >>> print(x)
                 Tensor(shape=[3], dtype=int64, place=Place(gpu:0), stop_gradient=True,
                     [1, 2, 3])
@@ -1210,7 +1239,7 @@ def monkey_patch_value():
                 >>> print(x)
                 Tensor(shape=[3], dtype=int16, place=Place(gpu:0), stop_gradient=True,
                     [1, 2, 3])
-                >>> y = paddle.to_tensor([4,5,6])
+                >>> y = paddle.to_tensor([4, 5, 6])
                 >>> y
                 Tensor(shape=[3], dtype=int64, place=Place(gpu:0), stop_gradient=True,
                     [4, 5, 6])
@@ -1362,7 +1391,7 @@ def monkey_patch_value():
         return res
 
     @fake_interface_only
-    def numpy(self):
+    def numpy(self, *, force=True):
         """
         **Notes**:
             **This API is ONLY available in Dygraph mode**
@@ -1372,7 +1401,7 @@ def monkey_patch_value():
         Returns type:
             ndarray: dtype is same as current Variable
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> import paddle.base as base
@@ -1401,7 +1430,7 @@ def monkey_patch_value():
             list: Elements have the same dtype as current Variable
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> import paddle.base as base
@@ -1431,7 +1460,7 @@ def monkey_patch_value():
         Setting requires_grad=True is equivalent to setting stop_gradient=False.
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
                 >>> x = paddle.randn([2, 3])
@@ -1456,18 +1485,19 @@ def monkey_patch_value():
             )
         self.stop_gradient = not value
 
-    def requires_grad_(self, value: bool) -> None:
+    def requires_grad_(self, requires_grad: bool = True) -> Tensor:
         """
         Set whether this Tensor requires gradient computation.
 
         Args:
-            value (bool): True to enable gradient computation, False to disable.
+            requires_grad (bool): True to enable gradient computation, False to disable.
         """
-        if not isinstance(value, bool):
+        if not isinstance(requires_grad, bool):
             raise TypeError(
-                f"requires_grad must be bool, but got {type(value)}"
+                f"requires_grad must be bool, but got {type(requires_grad)}"
             )
-        self.stop_gradient = not value
+        self.stop_gradient = not requires_grad
+        return self
 
     @property
     def itemsize(self) -> int:
@@ -1475,10 +1505,10 @@ def monkey_patch_value():
         Returns the number of bytes allocated on the machine for a single element of the Tensor.
 
         Examples:
-            .. code-block:: python
+            .. code-block:: pycon
 
                 >>> import paddle
-                >>> x = paddle.randn((2,3),dtype=paddle.float64)
+                >>> x = paddle.randn((2, 3), dtype=paddle.float64)
                 >>> x.itemsize
                 8
         """
@@ -1503,6 +1533,7 @@ def monkey_patch_value():
         ('device', device),
         ('contiguous', contiguous),
         ('is_cuda', is_cuda),
+        ('is_cpu', is_cpu),
         ('is_contiguous', is_contiguous),
         ('item', _item),
         ('dim', dim),
@@ -1513,6 +1544,7 @@ def monkey_patch_value():
         ('uint8', byte),
         ('type_as', type_as),
         ('size', _size_),
+        ('nelement', nelement),
         ('T', _T_),
         ('mT', _mT_),
         ('new_full', _new_full_),

@@ -67,8 +67,39 @@ size_t DeviceInterface::GetMaxThreadsPerBlock(size_t dev_id) {
   return 0;
 }
 
+size_t DeviceInterface::GetMaxSharedMemPerBlock(size_t dev_id) {
+  VLOG(10) << Type() << " get max shared mem per block " << 0;
+  return 0;
+}
+
+size_t DeviceInterface::GetMaxBlocksPerMultiProcessor(size_t dev_id) {
+  VLOG(10) << Type() << " get max blocks per multiprocessor " << 0;
+  return 0;
+}
+
+size_t DeviceInterface::GetWarpSize(size_t dev_id) {
+  VLOG(10) << Type() << " get warp size " << 0;
+  return 0;
+}
+
+size_t DeviceInterface::GetMaxRegistersPerMultiProcessor(size_t dev_id) {
+  VLOG(10) << Type() << " get max registers per multiprocessor " << 0;
+  return 0;
+}
+
+size_t DeviceInterface::GetPreferredVectorWidth(size_t dev_id) {
+  VLOG(10) << Type() << " get preferred vector width " << 0;
+  return 0;
+}
+
 std::array<unsigned int, 3> DeviceInterface::GetMaxGridDimSize(size_t dev_id) {
   VLOG(10) << Type() << " get max grid dim size [" << 0 << ", " << 0 << ", "
+           << 0 << "]";
+  return {0, 0, 0};
+}
+
+std::array<unsigned int, 3> DeviceInterface::GetMaxBlockDimSize(size_t dev_id) {
+  VLOG(10) << Type() << " get max block dim size [" << 0 << ", " << 0 << ", "
            << 0 << "]";
   return {0, 0, 0};
 }
@@ -89,7 +120,7 @@ bool DeviceInterface::IsDnnAvailable(size_t dev_id) {
 }
 
 void* DeviceInterface::InitEigenDevice(const Place& place,
-                                       phi::stream::stream_t stream,
+                                       stream::stream_t stream,
                                        phi::Allocator* allocator) {
   VLOG(10) << Type() << " init eigen device ";
   return 0;
@@ -341,7 +372,7 @@ void DeviceInterface::CCLGetUniqueId(ccl::CCLRootId* root_id) {
 
 void DeviceInterface::CCLBroadcast(void* data,
                                    size_t num,
-                                   phi::DataType data_type,
+                                   DataType data_type,
                                    size_t root,
                                    const ccl::CCLComm& ccl_comm,
                                    const stream::stream_t& stream) {
@@ -351,7 +382,7 @@ void DeviceInterface::CCLBroadcast(void* data,
 void DeviceInterface::CCLAllReduce(void* in_data,
                                    void* out_data,
                                    size_t num,
-                                   phi::DataType data_type,
+                                   DataType data_type,
                                    ccl::CCLReduceOp reduce_op,
                                    const ccl::CCLComm& ccl_comm,
                                    const stream::stream_t& stream) {
@@ -361,7 +392,7 @@ void DeviceInterface::CCLAllReduce(void* in_data,
 void DeviceInterface::CCLReduce(void* in_data,
                                 void* out_data,
                                 size_t num,
-                                phi::DataType data_type,
+                                DataType data_type,
                                 ccl::CCLReduceOp reduce_op,
                                 size_t root_id,
                                 const ccl::CCLComm& ccl_comm,
@@ -372,7 +403,7 @@ void DeviceInterface::CCLReduce(void* in_data,
 void DeviceInterface::CCLAllGather(void* in_data,
                                    void* out_data,
                                    size_t num,
-                                   phi::DataType data_type,
+                                   DataType data_type,
                                    const ccl::CCLComm& ccl_comm,
                                    const stream::stream_t& stream) {
   INTERFACE_UNIMPLEMENT;
@@ -381,7 +412,7 @@ void DeviceInterface::CCLAllGather(void* in_data,
 void DeviceInterface::CCLReduceScatter(void* in_data,
                                        void* out_data,
                                        size_t num,
-                                       phi::DataType data_type,
+                                       DataType data_type,
                                        ccl::CCLReduceOp op,
                                        const ccl::CCLComm& ccl_comm,
                                        const stream::stream_t& stream) {
@@ -394,7 +425,7 @@ void DeviceInterface::CCLGroupEnd() { INTERFACE_UNIMPLEMENT; }
 
 void DeviceInterface::CCLSend(void* sendbuf,
                               size_t num,
-                              phi::DataType data_type,
+                              DataType data_type,
                               size_t dst_rank,
                               const ccl::CCLComm& ccl_comm,
                               const stream::stream_t& stream) {
@@ -403,7 +434,7 @@ void DeviceInterface::CCLSend(void* sendbuf,
 
 void DeviceInterface::CCLRecv(void* recvbuf,
                               size_t num,
-                              phi::DataType data_type,
+                              DataType data_type,
                               size_t src_rank,
                               const ccl::CCLComm& ccl_comm,
                               const stream::stream_t& stream) {
@@ -412,10 +443,10 @@ void DeviceInterface::CCLRecv(void* recvbuf,
 
 void DeviceInterface::CCLAllToAll(const void** send_buf,
                                   const size_t* send_count,
-                                  const phi::DataType* send_dtype,
+                                  const DataType* send_dtype,
                                   void** recv_buf,
                                   const size_t* recv_count,
-                                  const phi::DataType* recv_dtype,
+                                  const DataType* recv_dtype,
                                   size_t rank,
                                   size_t nranks,
                                   const ccl::CCLComm& comm,
@@ -426,7 +457,7 @@ void DeviceInterface::CCLAllToAll(const void** send_buf,
 // blas
 void DeviceInterface::BlasAXPBY(size_t dev_id,
                                 const stream::stream_t& stream,
-                                phi::DataType dtype,
+                                DataType dtype,
                                 size_t numel,
                                 float alpha,
                                 void* x,
@@ -468,7 +499,7 @@ void DeviceInterface::ProfilerCollectTraceData(
 
 void DeviceInterface::InitBlasHandle(size_t dev_id,
                                      void** blas_handle,
-                                     phi::stream::stream_t stream) {
+                                     stream::stream_t stream) {
   INTERFACE_UNIMPLEMENT;
 }
 
@@ -487,6 +518,85 @@ void DeviceInterface::DestroyBlasHandle(size_t dev_id, void* blas_handle) {
 }
 
 void DeviceInterface::DestroyBlasLtHandle(size_t dev_id, void* blaslt_handle) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::InitDnnHandle(size_t dev_id,
+                                    void** dnn_handle,
+                                    phi::stream::stream_t stream) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::DestroyDnnHandle(size_t dev_id, void* dnn_handle) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+// CudaGraph
+void DeviceInterface::CUDAStreamBeginCapture(size_t dev_id,
+                                             stream::stream_t stream,
+                                             graph::streamCaptureMode mode) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::CudaStreamEndCapture(size_t dev_id,
+                                           stream::stream_t stream,
+                                           graph::CUDAGraph_t* pGraph) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::CudaGraphLaunch(size_t dev_id,
+                                      graph::CUDAGraphExec_t exec,
+                                      stream::stream_t stream) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::CudaGraphDestroy(graph::CUDAGraph_t graph) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::CudaGraphExecDestroy(graph::CUDAGraphExec_t graphExec) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::CudaGraphInstantiate(graph::CUDAGraphExec_t* pGraphExec,
+                                           graph::CUDAGraph_t* pGraph,
+                                           void** pErrorNode,
+                                           char* pLogBuffer,
+                                           size_t bufferSize) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::CudaGraphGetNodes(graph::CUDAGraph_t graph,
+                                        graph::CUDAGraphNode_t* pNodes,
+                                        size_t* numNodes) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::CudaStreamGetCaptureInfo(
+    size_t dev_id,
+    stream::stream_t stream,
+    graph::streamCaptureStatus* captureStatus_out,
+    unsigned long long* id_out,  // NOLINT
+    graph::CUDAGraph_t* graph_out,
+    graph::CUDAGraphNode_t* dependencies_out,
+    void** edgeData_out,
+    size_t* numDependencies_out) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::GetParameterSetterForExecGraph(
+    graph::CUDAGraph_t graph, graph::GraphHookManager* hook) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::CudaGraphDebugDotPrint(graph::CUDAGraph_t graph,
+                                             const char* path,
+                                             unsigned flags) {
+  INTERFACE_UNIMPLEMENT;
+}
+
+void DeviceInterface::CudaThreadExchangeStreamCaptureMode(
+    graph::streamCaptureMode* mode) {
   INTERFACE_UNIMPLEMENT;
 }
 

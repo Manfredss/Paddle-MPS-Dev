@@ -27,16 +27,15 @@ void ReduceAsKernel(const Context& dev_ctx,
                     const DenseTensor& x,
                     const DenseTensor& target,
                     DenseTensor* out) {
-  auto reduce_dim = phi::funcs::GetReduceDims(x, target);
+  auto reduce_dim = funcs::GetReduceDims(x, target);
   if (reduce_dim.size() != 0) {
     MetaTensor meta_out(out);
     SumInferMeta(x, reduce_dim, out->dtype(), false, &meta_out);
-    phi::SumKernel<T, Context>(
-        dev_ctx, x, reduce_dim, out->dtype(), false, out);
+    SumKernel<T, Context>(dev_ctx, x, reduce_dim, out->dtype(), false, out);
     out->Resize(target.dims());
   } else {
     dev_ctx.template Alloc<T>(out);
-    phi::Copy(dev_ctx, x, dev_ctx.GetPlace(), false, out);
+    Copy(dev_ctx, x, dev_ctx.GetPlace(), false, out);
   }
 }
 

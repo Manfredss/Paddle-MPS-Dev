@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import atexit
 import collections
-import copy
 import glob
 import hashlib
 import importlib.abc
@@ -32,6 +31,8 @@ import textwrap
 import threading
 import warnings
 from importlib import machinery
+
+import paddle
 
 try:
     from subprocess import DEVNULL  # py3
@@ -393,7 +394,7 @@ def prepare_unix_cudaflags(cflags):
             '--expt-relaxed-constexpr',
             '-DNVCC',
             *cflags,
-            *get_cuda_arch_flags(cflags),
+            *_get_cuda_arch_flags(cflags),
         ]
 
     return cflags
@@ -403,7 +404,7 @@ def prepare_win_cudaflags(cflags):
     """
     Prepare all necessary compiled flags for nvcc compiling CUDA files.
     """
-    cflags = [*COMMON_NVCC_FLAGS, '-w', *cflags, *get_cuda_arch_flags(cflags)]
+    cflags = [*COMMON_NVCC_FLAGS, '-w', *cflags, *_get_cuda_arch_flags(cflags)]
 
     return cflags
 
@@ -419,15 +420,114 @@ def add_std_without_repeat(cflags, compiler_type, use_std17=False):
         cflags.append(cpp_flag)
 
 
-def get_cuda_arch_flags(cflags):
+def _get_cuda_arch_flags(cflags: list[str] | None = None) -> list[str]:
     """
+    Determine CUDA arch flags to use.
+
     For an arch, say "6.1", the added compile flag will be
     ``-gencode=arch=compute_61,code=sm_61``.
     For an added "+PTX", an additional
     ``-gencode=arch=compute_xx,code=compute_xx`` is added.
     """
-    # TODO(Aurelius84):
-    return []
+
+    named_arches = collections.OrderedDict(
+        [
+            ('Pascal', '6.0;6.1+PTX'),
+            ('Volta+Tegra', '7.2'),
+            ('Volta', '7.0+PTX'),
+            ('Turing', '7.5+PTX'),
+            ('Ampere+Tegra', '8.7'),
+            ('Ampere', '8.0;8.6+PTX'),
+            ('Ada', '8.9+PTX'),
+            ('Hopper', '9.0+PTX'),
+            ('Blackwell+Tegra', '10.1'),
+            ('Blackwell', '10.0;12.0+PTX'),
+        ]
+    )
+
+    supported_arches = [
+        '6.0',
+        '6.1',
+        '6.2',
+        '7.0',
+        '7.2',
+        '7.5',
+        '8.0',
+        '8.6',
+        '8.7',
+        '8.9',
+        '9.0',
+        '9.0a',
+        '10.0',
+        '10.0a',
+        '10.1',
+        '10.1a',
+        '10.3',
+        '12.0',
+        '12.0a',
+    ]
+    valid_arch_strings = supported_arches + [
+        s + "+PTX" for s in supported_arches
+    ]
+
+    _arch_list = os.environ.get("PADDLE_CUDA_ARCH_LIST")
+
+    if not _arch_list:
+        if cflags is not None:
+            for flag in cflags:
+                if any(x in flag for x in ['PADDLE_EXTENSION_NAME']):
+                    continue
+                if 'arch' in flag:
+                    return []
+        warnings.warn(
+            "PADDLE_CUDA_ARCH_LIST are not set, all archs for visible cards are included for compilation. \n"
+            "If this is not desired, please set os.environ['PADDLE_CUDA_ARCH_LIST']."
+        )
+        arch_list = []
+        dev_types = core.get_all_custom_device_type()
+        if core.is_compiled_with_cuda():
+            for dev_id in range(paddle.device.cuda.device_count()):
+                capability = paddle.device.cuda.get_device_capability(
+                    dev_id
+                )  # (major, minor)
+                arch = f"{capability[0]}.{capability[1]}"
+                if arch not in arch_list:
+                    arch_list.append(arch)
+            arch_list = sorted(arch_list)
+            if arch_list:
+                arch_list[-1] += '+PTX'
+        elif dev_types and core.is_compiled_with_custom_device(dev_types[0]):
+            for dev_id in range(paddle.device.device_count()):
+                capability = paddle.device.get_device_capability(
+                    f"{dev_types[0]}:{dev_id}"
+                )
+                arch = f"{capability[0]}.{capability[1]}"
+                if arch not in arch_list:
+                    arch_list.append(arch)
+            arch_list = sorted(arch_list)
+            if arch_list:
+                arch_list[-1] += '+PTX'
+        else:
+            raise RuntimeError(
+                "Paddle is not compiled with CUDA or Custom Device, cannot determine CUDA arch."
+            )
+    else:
+        _arch_list = _arch_list.replace(' ', ';').replace(',', ';')
+        for named_arch, archival in named_arches.items():
+            _arch_list = _arch_list.replace(named_arch, archival)
+        arch_list = _arch_list.split(';')
+
+    flags = []
+    for arch in arch_list:
+        if arch not in valid_arch_strings:
+            raise ValueError(f"Unknown CUDA arch ({arch}) or GPU not supported")
+        version = arch.split('+')[0]
+        major, minor = version.split('.')
+        num = f"{major}{minor}"
+        flags.append(f"-gencode=arch=compute_{num},code=sm_{num}")
+        if arch.endswith('+PTX'):
+            flags.append(f"-gencode=arch=compute_{num},code=compute_{num}")
+    return sorted(set(flags))
 
 
 def get_rocm_arch_flags(cflags):
@@ -541,6 +641,7 @@ def normalize_extension_kwargs(kwargs, use_cuda=False):
     include_dirs = list(kwargs.get('include_dirs', []))
     include_dirs = [os.fsdecode(include_dir) for include_dir in include_dirs]
     include_dirs.extend(compile_include_dirs)
+    include_dirs.extend(find_paddle_custom_device_includes())
     include_dirs.extend(find_paddle_includes(use_cuda))
     include_dirs.extend(find_python_includes())
 
@@ -563,9 +664,12 @@ def normalize_extension_kwargs(kwargs, use_cuda=False):
         extra_link_args = kwargs.get('extra_link_args', [])
         extra_link_args.extend(MSVC_LINK_FLAGS)
         lib_core_name = create_sym_link_if_not_exist()
-        extra_link_args.append(f'{lib_core_name}')
+        required_link_args = [f'{lib_core_name}', 'phi.lib']
         if use_cuda:
-            extra_link_args.extend(['cudadevrt.lib', 'cudart_static.lib'])
+            required_link_args.extend(['cudadevrt.lib', 'cudart_static.lib'])
+        for link_arg in required_link_args:
+            if link_arg not in extra_link_args:
+                extra_link_args.append(link_arg)
         kwargs['extra_link_args'] = extra_link_args
 
     else:
@@ -574,7 +678,15 @@ def normalize_extension_kwargs(kwargs, use_cuda=False):
         # On Linux, GCC support '-l:xxx.so' to specify the library name
         # without `lib` prefix.
         if OS_NAME.startswith('linux'):
-            extra_link_args.append(f'-l:{_get_core_name()}')
+            # Force link libpaddle.so to avoid "as-needed" optimization
+            # when user only uses phi headers.
+            extra_link_args.extend(
+                [
+                    '-Wl,--no-as-needed',
+                    f'-l:{_get_core_name()}',
+                    '-Wl,--as-needed',
+                ]
+            )
         # ----------------------- MacOS Platform ----------------------- #
         else:
             # See _reset_so_rpath for details.
@@ -603,30 +715,6 @@ def normalize_extension_kwargs(kwargs, use_cuda=False):
     if compile_dir is None:
         # Add this compile option to isolate base headers
         add_compile_flag(extra_compile_args, ['-DPADDLE_WITH_CUSTOM_KERNEL'])
-    if core.is_compiled_with_cuda():
-        arch_list = os.getenv("PADDLE_CUDA_ARCH_LIST")
-        if arch_list:
-            arch_list = [
-                s.strip() for s in re.split(r";|\s|\,", arch_list) if s.strip()
-            ]
-            nvcc_options = list(extra_compile_args.get("nvcc", []))
-            sms = []
-            for s in arch_list:
-                sm = [int(ss) for ss in s.split(".") if ss]
-                assert len(sm) in [1, 2], f"invalid sm format: {s}"
-                if len(sm) == 2:
-                    sm = sm[0] * 10 + sm[1]
-                else:
-                    sm = sm[0]
-                sms.append(sm)
-
-            sms = sorted(set(sms))
-            for sm in sms:
-                nvcc_options.extend(
-                    ["-gencode", f"arch=compute_{sm},code=sm_{sm}"]
-                )
-            extra_compile_args = copy.deepcopy(extra_compile_args)
-            extra_compile_args["nvcc"] = nvcc_options
 
     kwargs['extra_compile_args'] = extra_compile_args
 
@@ -699,7 +787,7 @@ def find_ccache_home():
 
     if ccache_path is None:
         warning_message = "No ccache found. Please be aware that recompiling all source files may be required. "
-        warning_message += "You can download and install ccache from: https://github.com/ccache/ccache/blob/master/doc/INSTALL.md"
+        warning_message += "You can download and install ccache from: https://github.com/ccache/ccache/blob/master/doc/install.md"
         warnings.warn(warning_message)
 
     return ccache_path
@@ -789,8 +877,12 @@ def find_cuda_includes():
         raise ValueError(
             "Not found CUDA runtime, please use `export CUDA_HOME=XXX` to specific it."
         )
+    base_include = os.path.join(cuda_home, 'include')
 
-    return [os.path.join(cuda_home, 'include')]
+    sub_dirs = ['', 'cccl', 'nvtx3']
+
+    paths = [os.path.join(base_include, sub) for sub in sub_dirs]
+    return [p for p in paths if os.path.exists(p)]
 
 
 def find_rocm_includes():
@@ -850,6 +942,31 @@ def find_paddle_includes(use_cuda=False):
         if std_v1_includes is not None and os.path.exists(std_v1_includes):
             include_dirs.append(std_v1_includes)
 
+    return include_dirs
+
+
+def find_paddle_custom_device_includes():
+    """
+    Return Paddle Custom Device necessary include dir path.
+    """
+    include_dirs = []
+    devices = core.get_all_device_type()
+
+    if not devices:
+        return include_dirs
+
+    device = devices[-1]
+    if core.is_compiled_with_custom_device(device):
+        custom_device_root = os.getenv("CUSTOM_DEVICE_ROOT")
+        if custom_device_root:
+            include_dir = os.path.join(custom_device_root, "include")
+            if os.path.exists(include_dir):
+                include_dirs.append(include_dir)
+        else:
+            raise ValueError(
+                "Not found CUSTOM_DEVICE_ROOT, please use `export CUSTOM_DEVICE_ROOT=XXX` to specific it."
+            )
+        return include_dirs
     return include_dirs
 
 
@@ -977,7 +1094,7 @@ def get_build_directory(verbose: bool = False) -> str:
 
     Examples:
 
-    .. code-block:: python
+    .. code-block:: pycon
 
         >>> from paddle.utils.cpp_extension import get_build_directory
 

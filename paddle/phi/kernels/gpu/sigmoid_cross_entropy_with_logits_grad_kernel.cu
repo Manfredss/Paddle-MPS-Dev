@@ -14,6 +14,7 @@
 
 #include "paddle/phi/kernels/sigmoid_cross_entropy_with_logits_grad_kernel.h"
 
+#include "paddle/phi/backends/gpu/cuda/cuda_graph_with_memory_pool.h"
 #include "paddle/phi/common/memory_utils.h"
 #include "paddle/phi/kernels/gpu/sigmoid_cross_entropy_with_logits.h"
 #include "paddle/phi/kernels/scale_kernel.h"
@@ -28,9 +29,9 @@ struct SigmoidBwdFunctor {
   HOSTDEVICE inline SigmoidBwdFunctor(const T ignore_index)
       : ignore_index_(ignore_index) {}
 
-  HOSTDEVICE inline phi::Array<T, 2> operator()(const T x,
-                                                const T label,
-                                                const T dout) {
+  HOSTDEVICE inline Array<T, 2> operator()(const T x,
+                                           const T label,
+                                           const T dout) {
     T counts;
     T dx_data;
 
@@ -40,12 +41,12 @@ struct SigmoidBwdFunctor {
       counts = 0;
     } else {
       T simoid_x =
-          static_cast<T>(1) / (static_cast<T>(1) + phi::funcs::real_exp(-x));
+          static_cast<T>(1) / (static_cast<T>(1) + funcs::real_exp(-x));
       T diff = simoid_x - label;
       dx_data = dout * diff;
       counts = 1;
     }
-    phi::Array<T, 2> outs;
+    Array<T, 2> outs;
 
     outs[0] = dx_data;
     outs[1] = counts;
@@ -61,10 +62,10 @@ struct SigmoidBwdPosWeightFunctor {
   HOSTDEVICE inline SigmoidBwdPosWeightFunctor(const T ignore_index)
       : ignore_index_(ignore_index) {}
 
-  HOSTDEVICE inline phi::Array<T, 2> operator()(const T x,
-                                                const T label,
-                                                const T pos_weight,
-                                                const T dout) {
+  HOSTDEVICE inline Array<T, 2> operator()(const T x,
+                                           const T label,
+                                           const T pos_weight,
+                                           const T dout) {
     T counts;
     T dx_data;
 
@@ -75,8 +76,8 @@ struct SigmoidBwdPosWeightFunctor {
     } else {
       T max_val = x < 0 ? -x : 0;
       T term1 = (x < 0) ? static_cast<T>(-1) : static_cast<T>(0);
-      T down1 = phi::funcs::real_exp(-max_val);
-      T down2 = phi::funcs::real_exp(-x - max_val);
+      T down1 = funcs::real_exp(-max_val);
+      T down2 = funcs::real_exp(-x - max_val);
       T term2 = down1 * (-term1) + down2 * (-1 - term1);
       T term3 = (static_cast<T>(1.) - label);
       T diff = pos_weight * (term2 / (down1 + down2) + term1) + term3;
@@ -84,7 +85,7 @@ struct SigmoidBwdPosWeightFunctor {
 
       counts = 1;
     }
-    phi::Array<T, 2> outs;
+    Array<T, 2> outs;
 
     outs[0] = dx_data;
     outs[1] = counts;
@@ -97,7 +98,7 @@ void SigmoidCrossEntropyWithLogitsGradKernel(
     const Context &dev_ctx,
     const DenseTensor &x,
     const DenseTensor &label,
-    const paddle::optional<DenseTensor> &pos_weight,
+    const optional<DenseTensor> &pos_weight,
     const DenseTensor &out_grad,
     bool normalize,
     int ignore_index,
@@ -116,20 +117,20 @@ void SigmoidCrossEntropyWithLogitsGradKernel(
   if (pos_weight.get_ptr() == nullptr) {
     std::vector<const DenseTensor *> ins = {&x, &label, &out_grad};
     auto functor = SigmoidBwdFunctor<T>(ignore_index);
-    phi::funcs::ElementwiseKernel<T, decltype(functor), 2>(
+    funcs::ElementwiseKernel<T, decltype(functor), 2>(
         dev_ctx, ins, &outs, functor);
   } else {
     std::vector<const DenseTensor *> ins = {
         &x, &label, pos_weight.get_ptr(), &out_grad};
     auto functor = SigmoidBwdPosWeightFunctor<T>(ignore_index);
-    phi::funcs::ElementwiseKernel<T, decltype(functor), 2>(
+    funcs::ElementwiseKernel<T, decltype(functor), 2>(
         dev_ctx, ins, &outs, functor);
   }
   if (normalize) {
     DenseTensor norm_tensor;
     norm_tensor.Resize({sizeof(T)});
     dev_ctx.template Alloc<T>(&norm_tensor);
-    auto dims = common::vectorize(counts_tensor.dims());
+    auto dims = vectorize(counts_tensor.dims());
     std::vector<int> reduce_dim = {};
     for (int i = 0; i < dims.size(); i++) {
       reduce_dim.push_back(i);
@@ -138,9 +139,18 @@ void SigmoidCrossEntropyWithLogitsGradKernel(
     funcs::ReduceKernel<T, T, kps::AddFunctor, NonzeroFunctor<T>>(
         dev_ctx, counts_tensor, &norm_tensor, NonzeroFunctor<T>(), reduce_dim);
     T *norm = dev_ctx.template Alloc<T>(&norm_tensor);
-    auto norm_cpu_mem = phi::memory_utils::Alloc(phi::CPUPlace(), sizeof(T));
+    PADDLE_ENFORCE_EQ(
+        backends::gpu::IsCUDAGraphCapturing(),
+        false,
+        common::errors::InvalidArgument(
+            "SigmoidCrossEntropyWithLogitsGrad does not support CUDA Graph "
+            "capture: async D2H copy to a locally allocated CPU buffer "
+            "'norm_cpu_mem' will bake the destination address into the graph; "
+            "on replay the allocation is re-created at a different address, "
+            "causing a dangling-pointer write."));
+    auto norm_cpu_mem = phi::memory_utils::Alloc(CPUPlace(), sizeof(T));
     T *norm_cpu_ptr = reinterpret_cast<T *>(norm_cpu_mem->ptr());
-    memory_utils::Copy(phi::CPUPlace(),
+    memory_utils::Copy(CPUPlace(),
                        norm_cpu_ptr,
                        dev_ctx.GetPlace(),
                        norm,
@@ -150,7 +160,7 @@ void SigmoidCrossEntropyWithLogitsGradKernel(
     auto eps = static_cast<T>(1e-5);
     *norm_cpu_ptr = *norm_cpu_ptr > eps ? *norm_cpu_ptr : eps;
 
-    phi::ScaleKernel<T>(
+    ScaleKernel<T>(
         dev_ctx, *in_grad, (1.0 / *norm_cpu_ptr), 0.0f, false, in_grad);
   }
 }

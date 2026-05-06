@@ -13,10 +13,10 @@
 // limitations under the License.
 
 #include "paddle/fluid/pybind/cuda_streams_py.h"
-
 #include <string>
+#include <utility>
 #include <vector>
-
+#include "glog/logging.h"
 #include "paddle/phi/api/profiler/event.h"
 #include "paddle/phi/core/platform/device_event_base.h"
 
@@ -62,6 +62,19 @@ PY_STREAM_TYPE set_current_stream(PY_STREAM_TYPE stream) {
   return original_stream;
 }
 
+PY_STREAM_TYPE get_legacy_default_stream(int device_id) {
+  static thread_local std::map<int, phi::CUDAStream> legacy_default_streams;
+  if (device_id == -1) {
+    device_id = phi::backends::gpu::GetCurrentDeviceId();
+  }
+  GPUPlace place(device_id);
+
+  legacy_default_streams.try_emplace(
+      device_id, place, static_cast<gpuStream_t>(0));
+
+  return &legacy_default_streams.at(device_id);
+}
+
 #endif
 }  // namespace platform
 namespace pybind {
@@ -78,6 +91,19 @@ void BindCudaStream(py::module *m_ptr) {
 #else
         PADDLE_THROW(common::errors::Unavailable(
             "Paddle do not support _get_current_stream "
+            "Cannot visit device synchronize."));
+#endif
+      },
+      py::return_value_policy::reference);
+
+  m.def(
+      "_get_legacy_default_stream",
+      [](int device_id) {
+#if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
+        return platform::get_legacy_default_stream(device_id);
+#else
+        PADDLE_THROW(common::errors::Unavailable(
+            "Paddle do not support _get_legacy_default_stream "
             "Cannot visit device synchronize."));
 #endif
       },
@@ -102,8 +128,7 @@ void BindCudaStream(py::module *m_ptr) {
 #endif
           gpuStream_t raw = reinterpret_cast<gpuStream_t>(data_ptr);
 
-          return std::make_unique<phi::CUDAStream>(phi::GPUPlace(device_id),
-                                                   raw);
+          return std::make_unique<phi::CUDAStream>(GPUPlace(device_id), raw);
 #else
         PADDLE_THROW(common::errors::Unavailable(
             "Paddle is not compiled with CUDA/HIP, "
@@ -172,7 +197,7 @@ void BindCudaStream(py::module *m_ptr) {
               If priority is None, the priority is 2(normal). Default: None.
 
       Examples:
-          .. code-block:: python
+          .. code-block:: pycon
 
               >>> # doctest: +REQUIRES(env:GPU)
               >>> import paddle
@@ -194,7 +219,7 @@ void BindCudaStream(py::module *m_ptr) {
               event(CUDAEvent): The event to wait on.
 
           Examples:
-              .. code-block:: python
+              .. code-block:: pycon
 
                   >>> # doctest: +REQUIRES(env:GPU)
                   >>> import paddle
@@ -216,7 +241,7 @@ void BindCudaStream(py::module *m_ptr) {
               stream(CUDAStream): The stream to synchronize with.
 
           Examples:
-              .. code-block:: python
+              .. code-block:: pycon
 
                   >>> # doctest: +REQUIRES(env:GPU)
                   >>> import paddle
@@ -234,7 +259,7 @@ void BindCudaStream(py::module *m_ptr) {
           Returns: A boolean value.
 
           Examples:
-              .. code-block:: python
+              .. code-block:: pycon
 
                   >>> # doctest: +REQUIRES(env:GPU)
                   >>> import paddle
@@ -249,7 +274,7 @@ void BindCudaStream(py::module *m_ptr) {
           Waits for stream tasks to complete.
 
           Examples:
-              .. code-block:: python
+              .. code-block:: pycon
 
                   >>> # doctest: +REQUIRES(env:GPU)
                   >>> import paddle
@@ -277,7 +302,7 @@ void BindCudaStream(py::module *m_ptr) {
               The record event.
 
           Examples:
-              .. code-block:: python
+              .. code-block:: pycon
 
                   >>> # doctest: +REQUIRES(env:GPU)
                   >>> import paddle
@@ -296,7 +321,7 @@ void BindCudaStream(py::module *m_ptr) {
           return the raw cuda stream of type cudaStream_t as type int.
 
           Examples:
-              .. code-block:: python
+              .. code-block:: pycon
 
                   >>> # doctest: +REQUIRES(env:GPU)
                   >>> import paddle
@@ -318,7 +343,7 @@ void BindCudaStream(py::module *m_ptr) {
           return the raw cuda stream of type cudaStream_t as type int.
 
           Examples:
-              .. code-block:: python
+              .. code-block:: pycon
 
                   >>> # doctest: +REQUIRES(env:GPU)
                   >>> import paddle
@@ -331,12 +356,11 @@ void BindCudaStream(py::module *m_ptr) {
 
           )DOC")
       .def_property_readonly(
-          "place",
-          [](phi::CUDAStream &self) { return phi::GPUPlace(self.place()); })
+          "place", [](phi::CUDAStream &self) { return GPUPlace(self.place()); })
 #endif
       .def(
           "__init__",
-          [](phi::CUDAStream &self, phi::GPUPlace *place, int priority) {
+          [](phi::CUDAStream &self, GPUPlace *place, int priority) {
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
             if (priority != 1 && priority != 2) {
               PADDLE_THROW(common::errors::InvalidArgument(
@@ -346,7 +370,7 @@ void BindCudaStream(py::module *m_ptr) {
             auto stream_flag = phi::CUDAStream::StreamFlag::kStreamNonBlocking;
             if (place == nullptr) {
               int curr_device_id = platform::GetCurrentDeviceId();
-              auto place_tmp = phi::GPUPlace(curr_device_id);
+              auto place_tmp = GPUPlace(curr_device_id);
               new (&self) phi::CUDAStream(place_tmp, priority - 2, stream_flag);
             } else {
               // setting priority 1(high) and 2(normal) correspond to the actual
@@ -383,8 +407,8 @@ void BindCudaStream(py::module *m_ptr) {
             auto stream_flag = phi::CUDAStream::StreamFlag::kStreamNonBlocking;
             // setting priority 1(high) and 2(normal) correspond to the actual
             // cuda stream priority -1 and 0.
-            new (&self) phi::CUDAStream(
-                phi::GPUPlace(device), priority - 2, stream_flag);
+            new (&self)
+                phi::CUDAStream(GPUPlace(device), priority - 2, stream_flag);
 #else
             PADDLE_THROW(common::errors::Unavailable(
         "Class CUDAStream can only be initialized on the GPU platform."));
@@ -396,8 +420,8 @@ void BindCudaStream(py::module *m_ptr) {
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
         int device_id = platform::GetCurrentDeviceId();
         auto stream_flag = phi::CUDAStream::StreamFlag::kStreamNonBlocking;
-        new (&self) phi::CUDAStream(
-            phi::GPUPlace(device_id), /*priority=*/0, stream_flag);
+        new (&self)
+            phi::CUDAStream(GPUPlace(device_id), /*priority=*/0, stream_flag);
 #else
             PADDLE_THROW(common::errors::Unavailable(
         "Class CUDAStream can only be initialized on the GPU platform."));
@@ -413,7 +437,7 @@ void BindCudaStream(py::module *m_ptr) {
           interprocess(bool, optional): Whether the event can be shared between processes. Default: False.
 
       Examples:
-          .. code-block:: python
+          .. code-block:: pycon
 
               >>> # doctest: +REQUIRES(env:GPU)
               >>> import paddle
@@ -436,7 +460,7 @@ void BindCudaStream(py::module *m_ptr) {
               stream(CUDAStream, optional): The handle of CUDA stream. If None, the stream is the current stream. Default: None.
 
           Examples:
-              .. code-block:: python
+              .. code-block:: pycon
 
                   >>> # doctest: +REQUIRES(env:GPU)
                   >>> import paddle
@@ -455,7 +479,7 @@ void BindCudaStream(py::module *m_ptr) {
           Returns: A boolean which indicates all work currently captured by the event has been completed.
 
           Examples:
-              .. code-block:: python
+              .. code-block:: pycon
 
                   >>> # doctest: +REQUIRES(env:GPU)
                   >>> import paddle
@@ -476,7 +500,7 @@ void BindCudaStream(py::module *m_ptr) {
           Returns: A int which indicates the elapsed time.
 
           Examples:
-              .. code-block:: python
+              .. code-block:: pycon
 
                   >>> # doctest: +REQUIRES(env:GPU)
                   >>> import paddle
@@ -497,7 +521,7 @@ void BindCudaStream(py::module *m_ptr) {
             Waits for an event to complete.
 
             Examples:
-                .. code-block:: python
+                .. code-block:: pycon
 
                     >>> # doctest: +REQUIRES(env:GPU)
                     >>> import paddle

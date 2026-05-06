@@ -50,11 +50,11 @@ void SetTensorValueKernel(const Context& dev_ctx,
   std::vector<int64_t> starts_local = starts.GetData();
   std::vector<int64_t> ends_local = ends.GetData();
   std::vector<int64_t> steps_local = steps.GetData();
-  phi::funcs::CheckAndUpdateSliceAttrs(
+  funcs::CheckAndUpdateSliceAttrs(
       in_dims, axes, &starts_local, &ends_local, &steps_local);
 
-  std::vector<int64_t> output_dims = common::vectorize<int64_t>(in.dims());
-  std::vector<int64_t> output_stride = common::vectorize<int64_t>(in.strides());
+  std::vector<int64_t> output_dims = vectorize<int64_t>(in.dims());
+  std::vector<int64_t> output_stride = vectorize<int64_t>(in.strides());
   int64_t output_offset = static_cast<int64_t>(in.offset());
   for (size_t i = 0; i < axes.size(); ++i) {
     int64_t axis_size = in.dims()[axes[i]];
@@ -81,27 +81,27 @@ void SetTensorValueKernel(const Context& dev_ctx,
                                     &new_out_shape,
                                     &new_out_stride);
 
-  if (product(phi::make_ddim(new_out_shape)) <= 0) {
+  if (product(make_ddim(new_out_shape)) <= 0) {
     // 0-size tensor, no need to copy
     out->ResetHolder(in.Holder());
     out->ShareInplaceVersionCounterWith(in);
     return;
   }
 
-  phi::funcs::CheckIsDimsMatch(phi::make_ddim(new_out_shape), value.dims());
+  funcs::CheckIsDimsMatch(make_ddim(new_out_shape), value.dims());
   if (new_out_shape.empty()) new_out_shape.push_back(1);
   DenseTensor expand_tensor;
   if (value.numel() == 1) {
     expand_tensor = value;
-    expand_tensor.Resize(phi::make_ddim({1}));
-  } else if (product(value.dims()) == product(phi::make_ddim(new_out_shape))) {
+    expand_tensor.Resize({1});
+  } else if (product(value.dims()) == product(make_ddim(new_out_shape))) {
     expand_tensor = value;
-    if (value.dims() != phi::make_ddim(new_out_shape)) {
-      expand_tensor.Resize(phi::make_ddim(new_out_shape));
+    if (value.dims() != make_ddim(new_out_shape)) {
+      expand_tensor.Resize(new_out_shape);
     }
 
   } else {
-    auto value_dims = phi::vectorize<int64_t>(value.dims());
+    auto value_dims = vectorize<int64_t>(value.dims());
     DenseTensor value_tensor = Empty<T>(dev_ctx, IntArray{value_dims});
     value_tensor = value;
     auto it = value_dims.begin();
@@ -109,10 +109,10 @@ void SetTensorValueKernel(const Context& dev_ctx,
       it = value_dims.erase(it);
     }
     if (value_dims.empty()) value_dims.push_back(1);
-    auto v_dims = phi::make_ddim(value_dims);
-    auto out_dims = phi::make_ddim(new_out_shape);
+    auto v_dims = make_ddim(value_dims);
+    auto out_dims = make_ddim(new_out_shape);
     value_tensor.Resize(v_dims);
-    if (phi::funcs::CheckIsLastDimsMatch(v_dims, out_dims)) {
+    if (funcs::CheckIsLastDimsMatch(v_dims, out_dims)) {
       expand_tensor = value_tensor;
     } else {
       expand_tensor = Empty<T>(dev_ctx, IntArray{new_out_shape});
@@ -171,14 +171,13 @@ void SetValueKernel(const Context& dev_ctx,
   if (is_full_set_one_value && !std::is_same<T, complex64>::value &&
       !std::is_same<T, complex128>::value) {
     dev_ctx.template Alloc<T>(out);
-    phi::funcs::set_constant(
-        dev_ctx, out, static_cast<float>(assign_values[0]));
+    funcs::set_constant(dev_ctx, out, static_cast<float>(assign_values[0]));
     return;
   }
 
   DenseTensor value_tensor = Empty<T>(dev_ctx, shape);
-  phi::TensorFromVector(assign_values, dev_ctx, &value_tensor);
-  value_tensor.Resize(common::make_ddim(shape));
+  TensorFromVector(assign_values, dev_ctx, &value_tensor);
+  value_tensor.Resize(shape);
   SetTensorValueKernel<T, Context>(dev_ctx,
                                    in,
                                    value_tensor,

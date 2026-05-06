@@ -51,8 +51,8 @@ namespace fusion {
  * 1D blocks: blockDim.x = cols
  * 2D grids: gridDim.y = rows
  */
-inline phi::backends::gpu::GpuLaunchConfig Get1DBlocksAnd2DGrids(
-    const phi::GPUContext &dev_ctx,
+inline backends::gpu::GpuLaunchConfig Get1DBlocksAnd2DGrids(
+    const GPUContext &dev_ctx,
     const uint64_t rows,
     const uint64_t cols,
     const int vec_size) {
@@ -79,7 +79,7 @@ inline phi::backends::gpu::GpuLaunchConfig Get1DBlocksAnd2DGrids(
     blocks_y = (blocks_y + blocks_z - 1) / blocks_z;
     blocks_y = blocks_y >= 65536 ? 65535 : blocks_y;
   }
-  phi::backends::gpu::GpuLaunchConfig config;
+  backends::gpu::GpuLaunchConfig config;
   config.block_per_grid.x = static_cast<uint32_t>(blocks_x);
   config.block_per_grid.y = static_cast<uint32_t>(blocks_y);
   config.block_per_grid.z = static_cast<uint32_t>(blocks_z);
@@ -126,7 +126,7 @@ __forceinline__ __device__ void RandVec<8>(GPURAND(StatePhilox4_32_10_t) *
 }
 
 template <typename T>
-inline void SetZero(const phi::GPUContext &dev_ctx, T *ptr, const size_t size) {
+inline void SetZero(const GPUContext &dev_ctx, T *ptr, const size_t size) {
   PADDLE_ENFORCE_GPU_SUCCESS(
       GPU(MemsetAsync)(ptr, 0, size * sizeof(T), dev_ctx.stream()));
 }
@@ -162,7 +162,7 @@ inline __device__ void CalculateDBias(const T *tmp_sum,
   int reduce_num_pre_thread = (BlockSizeX * VecSize + 31) / 32;
   // reduce 32 to 1
   for (int i = 0; i < reduce_num_pre_thread; i++) {
-    sum[i] = phi::funcs::WarpReduceSum(sum[i]);
+    sum[i] = funcs::WarpReduceSum(sum[i]);
   }
 
   // save sum to dbias

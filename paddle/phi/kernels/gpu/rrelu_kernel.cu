@@ -87,13 +87,13 @@ void RReluKernel(const Context& dev_ctx,
   auto size = x.numel();
   if (size <= 0) return;
 
-  phi::funcs::ForRange<Context> for_range(dev_ctx, size);
+  funcs::ForRange<Context> for_range(dev_ctx, size);
   if (is_test) {
     T mid_val = static_cast<T>((lower + upper) / 2.0);
     RReluTestCudaFunctor<T> functor(x_data, out_data, noise_data, mid_val);
     for_range(functor);
   } else {
-    using MT = typename phi::dtype::MPTypeTrait<T>::Type;
+    using MT = typename MPTypeTrait<T>::Type;
     funcs::uniform_distribution<MT> dist;
     funcs::uniform_real_transform<MT> trans(lower, upper);
     funcs::distribution_and_transform<T>(dev_ctx, noise, dist, trans);

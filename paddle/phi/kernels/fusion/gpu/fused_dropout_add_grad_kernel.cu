@@ -77,7 +77,7 @@ struct NoMaskBwFunctor {
                                     const T2* rand,
                                     int num) const {
     static constexpr int kCount =
-        phi::funcs::uniform_distribution<T2>::kReturnsCount;
+        funcs::uniform_distribution<T2>::kReturnsCount;
 #pragma unroll
     for (int i = 0; i < kCount; i++) {
       dst[i + kCount] = src_val[i];
@@ -102,7 +102,7 @@ __global__ void VectorizedDropoutBackward(
     Functor functor) {
   size_t idx = static_cast<size_t>(BLOCK_ID_X * BLOCK_NUM_X);
   static constexpr int kCount =
-      phi::funcs::uniform_distribution<float>::kReturnsCount;
+      funcs::uniform_distribution<float>::kReturnsCount;
   size_t stride = BLOCK_NUM_X * GRID_NUM_X * kCount;
 #ifdef PADDLE_WITH_HIP
   hiprandStatePhilox4_32_10_t state;
@@ -117,7 +117,7 @@ __global__ void VectorizedDropoutBackward(
   float rands[kCount];
   T x_y[kCount * 2];
 
-  using Rand = phi::funcs::uniform_distribution<float>;
+  using Rand = funcs::uniform_distribution<float>;
   using Cast = kps::IdentityFunctor<T>;
 
   int deal_size = BLOCK_NUM_X * kCount;
@@ -204,9 +204,9 @@ void FusedDropoutAddGradKernel(const Context& dev_ctx,
 
     // we assume seed/offset is same across iterations
     // seed_offset_data should preserved by cudaGraph pool
-    const phi::GPUContext* dev_ctx_p = &dev_ctx;
+    const GPUContext* dev_ctx_p = &dev_ctx;
     auto parameterSetter = [offset, dev_ctx_p, seed_offset](
-                               phi::backends::gpu::gpuKernelParams& params) {
+                               backends::gpu::gpuKernelParams& params) {
       const auto* seed_offset_data = seed_offset.data<int64_t>();
       const uint64_t seed_data = static_cast<uint64_t>(seed_offset_data[0]);
       const uint64_t increment = static_cast<uint64_t>(seed_offset_data[1]);
@@ -217,7 +217,7 @@ void FusedDropoutAddGradKernel(const Context& dev_ctx,
                << ", increment = " << increment;
     };
 
-    phi::backends::gpu::CUDAGraphNodeLauncher::gpuKernelCallback_t
+    backends::gpu::CUDAGraphNodeLauncher::gpuKernelCallback_t
         cudaKernelCallback = [=](unsigned int id) {
           void* functionPtr = reinterpret_cast<void*>(
               &(VectorizedDropoutBackward<T, NoMaskBwFunctor<T, float>>));
@@ -244,7 +244,7 @@ void FusedDropoutAddGradKernel(const Context& dev_ctx,
                   functor);
           return cudaFunc;
         };
-    phi::backends::gpu::CUDAGraphNodeLauncher::Instance().KernelNodeLaunch(
+    backends::gpu::CUDAGraphNodeLauncher::Instance().KernelNodeLaunch(
         parameterSetter, cudaKernelCallback);
 
     VLOG(10) << "NON_CUDA_GRAPH seed = " << seed_data

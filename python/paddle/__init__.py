@@ -39,6 +39,59 @@ except ImportError:
      import paddle from the source directory; please install paddlepaddle*.whl firstly.'''
     )
 
+
+# Preload CUDA libraries from pip package before loading C extensions,
+# to prevent LD_LIBRARY_PATH from pulling in mismatched system versions.
+# Also used later by CINN to preload libnvrtc-builtins.
+def _preload_nvidia_lib(lib_glob, sub_dirs=None):
+    """Search and preload a library from pip nvidia packages.
+
+    Searches nvidia/cu{major}/lib/ first (CUDA 13+),
+    then nvidia/{sub_dir}/lib/ for each sub_dir (CUDA 12).
+    """
+    import ctypes
+    import glob
+    import os
+
+    from .version import cuda_version as _cuda_version
+
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    nvidia_dir = os.path.join(pkg_dir, '..', 'nvidia')
+    cuda_major = _cuda_version.split('.')[0]
+
+    paths = glob.glob(
+        os.path.join(nvidia_dir, f'cu{cuda_major}', 'lib', lib_glob)
+    )
+    for sub_dir in sub_dirs or []:
+        paths += glob.glob(os.path.join(nvidia_dir, sub_dir, 'lib', lib_glob))
+    for path in paths:
+        ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+        break
+
+
+if __is_metainfo_generated:
+    import builtins
+    import platform
+
+    if platform.system() == 'Linux':
+        try:
+            from .version import (
+                cuda_version as _cuda_version,
+                with_pip_cuda_libraries,
+            )
+
+            if with_pip_cuda_libraries == 'ON' and (
+                platform.machine() in ('x86_64', 'AMD64')
+                or (
+                    platform.machine() == 'aarch64'
+                    and builtins.float(_cuda_version) >= 13.0
+                )
+            ):
+                _preload_nvidia_lib('libcublasLt.so.*[0-9]', ['cublas'])
+                _preload_nvidia_lib('libcublas.so.*[0-9]', ['cublas'])
+        except Exception:
+            pass
+
 # NOTE(SigureMo): We should place the import of base.core before other modules,
 # because there are some initialization codes in base/core/__init__.py.
 from .base import core  # noqa: F401
@@ -200,6 +253,7 @@ from paddle import (
     sparse as sparse,
     static as static,
     sysconfig as sysconfig,
+    testing as testing,
     vision as vision,
 )
 
@@ -243,6 +297,11 @@ from .autograd import (
     set_grad_enabled,
 )
 from .base.core import Size
+from .compat import (
+    disable_torch_proxy as disable_compat,
+    enable_torch_proxy as enable_compat,
+    use_torch_proxy_guard as use_compat_guard,  # noqa: F401
+)
 from .device import (  # noqa: F401
     Event,
     Stream,
@@ -300,6 +359,7 @@ from .nn.functional import (
     conv3d,
     group_norm,
     layer_norm,
+    relu,
 )
 from .nn.functional.distance import (
     pdist,
@@ -314,7 +374,7 @@ from .tensor.attribute import (
     real,
     shape,
 )
-from .tensor.compat_softmax import softmax
+from .tensor.compat_softmax import log_softmax, softmax
 from .tensor.creation import (
     BFloat16Tensor,
     BoolTensor,
@@ -406,7 +466,6 @@ from .tensor.logic import (
     greater_equal_,
     greater_than,
     greater_than_,
-    gt,
     is_empty,
     is_tensor,
     isclose,
@@ -450,7 +509,6 @@ from .tensor.manipulation import (
     flatten,
     flatten_,
     flip,
-    flip as reverse,
     gather,
     gather_nd,
     hsplit,
@@ -579,7 +637,6 @@ from .tensor.math import (  # noqa: F401
     floor_divide,
     floor_divide_,
     floor_mod,
-    floor_mod_,
     fmax,
     fmin,
     frac,
@@ -638,7 +695,6 @@ from .tensor.math import (  # noqa: F401
     minimum,
     mm,
     mod,
-    mod_,
     mul,
     multigammaln,
     multigammaln_,
@@ -750,6 +806,7 @@ from .tensor.stat import (
     var,
 )
 from .tensor.to_string import set_printoptions
+from .testing import _assert as _assert
 from .utils.dlpack import (
     from_dlpack,
     to_dlpack,
@@ -799,13 +856,22 @@ if is_compiled_with_cinn():
     os.environ['CINN_CONFIG_PATH'] = str(data_file_path)
 
 if __is_metainfo_generated and is_compiled_with_cuda():
+    import builtins
     import os
     import platform
 
+    from .version import cuda_version as _cuda_version, with_pip_cuda_libraries
+
     if (
         platform.system() == 'Linux'
-        and platform.machine() == 'x86_64'
-        and paddle.version.with_pip_cuda_libraries == 'ON'
+        and (
+            platform.machine() in ('x86_64', 'AMD64')
+            or (
+                platform.machine() == 'aarch64'
+                and builtins.float(_cuda_version) >= 13.0
+            )
+        )
+        and with_pip_cuda_libraries == 'ON'
     ):
         package_dir = os.path.dirname(os.path.abspath(__file__))
         nvidia_package_path = package_dir + "/.." + "/nvidia"
@@ -835,6 +901,7 @@ if __is_metainfo_generated and is_compiled_with_cuda():
         if is_compiled_with_cinn():
             cuda_cccl_path = package_dir + "/.." + "/nvidia/cuda_cccl/include/"
             set_flags({"FLAGS_cuda_cccl_dir": cuda_cccl_path})
+            _preload_nvidia_lib("libnvrtc-builtins.so.*", ['cuda_nvrtc'])
 
     elif (
         platform.system() == 'Windows'
@@ -978,7 +1045,6 @@ ne = not_equal
 lt = less_than
 less = less_than
 le = less_equal
-greater = gt
 ge = greater_equal
 swapdims = transpose
 swapaxes = transpose
@@ -1079,6 +1145,7 @@ __all__ = [
     'min',
     'narrow',
     'amin',
+    'aminmax',
     'any',
     'slice',
     'slice_scatter',
@@ -1308,7 +1375,6 @@ __all__ = [
     'chunk',
     'tolist',
     'tensordot',
-    "greater",
     'greater_than',
     'greater_than_',
     'shard_index',
@@ -1496,11 +1562,15 @@ __all__ = [
     'conv3d',
     'group_norm',
     'layer_norm',
+    'relu',
     'manual_seed',
     'softmax',
+    'log_softmax',
     'Generator',
     'adaptive_avg_pool1d',
     'autocast',
+    'enable_compat',
+    'disable_compat',
 ]
 import os
 

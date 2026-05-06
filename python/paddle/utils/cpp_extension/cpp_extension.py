@@ -19,13 +19,13 @@ from typing import TYPE_CHECKING, Any
 import os
 import copy
 import concurrent
+import functools
 import re
-import warnings
-import collections
 import setuptools
 import sys
 import paddle
 import site
+from distutils.errors import DistutilsExecError, LinkError
 
 from setuptools.command.easy_install import easy_install
 from setuptools.command.build_ext import build_ext
@@ -94,7 +94,10 @@ if core.is_compiled_with_rocm():
     ROCM_HOME = find_rocm_home()
     CUDA_HOME = ROCM_HOME
 
-CCACHE_HOME = find_ccache_home()
+
+@functools.cache
+def _get_ccache_home():
+    return find_ccache_home()
 
 
 def setup(**attr: Any) -> None:
@@ -415,6 +418,8 @@ class BuildExtension(build_ext):
         self.output_dir = kwargs.get("output_dir", None)
         # whether containing cuda source file in Extensions
         self.contain_cuda_file = False
+        # Initialize ccache_home to avoid race condition in multi-thread compilation
+        _get_ccache_home()
 
     def initialize_options(self) -> None:
         super().initialize_options()
@@ -434,6 +439,18 @@ class BuildExtension(build_ext):
         self._check_abi()
         current_extension_builder = self
 
+        # Check nvcc_dlink
+        ext = self.extensions[0]
+        if (
+            isinstance(ext.extra_compile_args, dict)
+            and 'nvcc_dlink' in ext.extra_compile_args
+        ):
+            cuda_dlink_post_cflags = prepare_unix_cudaflags(
+                copy.deepcopy(ext.extra_compile_args['nvcc_dlink'])
+            )
+        else:
+            cuda_dlink_post_cflags = None
+
         # Note(Aurelius84): If already compiling source before, we should check whether
         # cflags have changed and delete the built shared library to re-compile the source
         # even though source file content keep unchanged.
@@ -444,11 +461,17 @@ class BuildExtension(build_ext):
 
         # Consider .cu, .cu.cc as valid source extensions.
         self.compiler.src_extensions += ['.cu', '.cu.cc']
+
+        original_compile = None
+        original_link = None
+
         # Save the original _compile method for later.
         if self.compiler.compiler_type == 'msvc':
             self.compiler._cpp_extensions += ['.cu', '.cuh']
             original_compile = self.compiler.compile
             original_spawn = self.compiler.spawn
+        else:
+            original_compile = self.compiler.__class__.compile
 
         for extension in self.extensions:
             define_paddle_extension_name(extension)
@@ -472,9 +495,10 @@ class BuildExtension(build_ext):
                             "Not found ROCM runtime, \
                             please use `export ROCM_PATH= XXX` to specify it."
                         )
-                        if CCACHE_HOME is not None:
+                        ccache_home = _get_ccache_home()
+                        if ccache_home is not None:
                             hipcc_cmd = os.path.join(ROCM_HOME, 'bin', 'hipcc')
-                            hipcc_cmd = f'{CCACHE_HOME} {hipcc_cmd}'
+                            hipcc_cmd = f'{ccache_home} {hipcc_cmd}'
                         else:
                             hipcc_cmd = os.path.join(ROCM_HOME, 'bin', 'hipcc')
                         self.set_executable('compiler_so', hipcc_cmd)
@@ -500,9 +524,10 @@ class BuildExtension(build_ext):
                             "Not found CUDA runtime, \
                             please use `export CUDA_HOME= XXX` to specify it."
                         )
-                        if CCACHE_HOME is not None:
+                        ccache_home = _get_ccache_home()
+                        if ccache_home is not None:
                             nvcc_cmd = os.path.join(CUDA_HOME, 'bin', 'nvcc')
-                            nvcc_cmd = f'{CCACHE_HOME} {nvcc_cmd}'
+                            nvcc_cmd = f'{ccache_home} {nvcc_cmd}'
                         else:
                             nvcc_cmd = os.path.join(CUDA_HOME, 'bin', 'nvcc')
                         self.set_executable('compiler_so', nvcc_cmd)
@@ -513,10 +538,10 @@ class BuildExtension(build_ext):
                     cflags = prepare_unix_cudaflags(cflags)
                 # cxx compile Cpp source
                 else:
-                    if CCACHE_HOME is not None:
-                        # self.set_executable('compiler_so', [CCACHE_HOME, *self.executables['compiler_so']])
+                    ccache_home = _get_ccache_home()
+                    if ccache_home is not None:
                         self.set_executable(
-                            'compiler_so', [CCACHE_HOME, *self.compiler_so]
+                            'compiler_so', [ccache_home, *self.compiler_so]
                         )
 
                     if isinstance(cflags, dict):
@@ -555,6 +580,69 @@ class BuildExtension(build_ext):
                 # restore original_compiler
                 self.set_executable('compiler_so', original_compiler)
 
+        def unix_custom_link_shared_object(
+            self,
+            objects: list[str] | tuple[str, ...],
+            output_filename: str,
+            output_dir: str | None = None,
+            libraries: list[str] | tuple[str, ...] | None = None,
+            library_dirs: list[str] | tuple[str, ...] | None = None,
+            runtime_library_dirs: list[str] | tuple[str, ...] | None = None,
+            export_symbols: Any | None = None,
+            debug: bool = False,
+            extra_preargs: list[str] | None = None,
+            extra_postargs: list[str] | None = None,
+            build_temp: str | os.PathLike[str] | None = None,
+            target_lang: str | None = None,
+        ):
+            # Get extension
+            dlink_dir = os.path.dirname(objects[0])
+            dlink_object = os.path.join(dlink_dir, 'dlink.o')
+
+            # Construct command
+            # nvcc <objects> -o <dlink_object> <cuda_dlink_post_cflags>
+
+            if CUDA_HOME is None:
+                raise RuntimeError("CUDA_HOME is not found, please set it.")
+
+            nvcc_cmd = os.path.join(CUDA_HOME, 'bin', 'nvcc')
+
+            cmd = []
+            ccache_home = _get_ccache_home()
+            if ccache_home:
+                cmd.append(ccache_home)
+            cmd.append(nvcc_cmd)
+
+            cmd.extend(objects)
+            cmd.extend(['-o', dlink_object])
+
+            cmd.extend(cuda_dlink_post_cflags)
+
+            # Execute
+            try:
+                self.spawn(cmd)
+            except DistutilsExecError as msg:
+                raise LinkError(msg)
+
+            # Add dlink object to objects
+            objects = [*list(objects), dlink_object]
+
+            return original_link(
+                self,
+                objects,
+                output_filename,
+                output_dir,
+                libraries,
+                library_dirs,
+                runtime_library_dirs,
+                export_symbols,
+                debug,
+                extra_preargs,
+                extra_postargs,
+                build_temp,
+                target_lang,
+            )
+
         def unix_custom_single_compiler(
             self,
             sources,
@@ -580,7 +668,13 @@ class BuildExtension(build_ext):
             )
             cc_args = self._get_cc_args(pp_opts, debug, extra_preargs)
             # Create a thread pool
-            worker_number = min(os.cpu_count(), len(objects))
+            requested_workers = _get_num_workers(verbose=bool(self.verbose))
+            worker_number = _compute_worker_number(
+                requested_workers, os.cpu_count(), len(objects)
+            )
+            print(
+                f"Using {worker_number} workers for compilation. HINT: export MAX_JOBS=n to set the number of workers"
+            )
             with ThreadPoolExecutor(max_workers=worker_number) as executor:
                 # Submit all compilation tasks to the thread pool.
                 futures = {
@@ -745,24 +839,33 @@ class BuildExtension(build_ext):
 
         # customized compile process
         if self.compiler.compiler_type == 'msvc':
-            original_compile = self.compiler.compile
             self.compiler.compile = win_custom_single_compiler
         else:
-            original_compile = self.compiler.__class__.compile
             self.compiler.__class__.compile = unix_custom_single_compiler
 
+        # Ensure object files are generated under build_temp, not build_lib,
+        # to avoid accidental inclusion into wheel contents.
         self.compiler.object_filenames = object_filenames_with_cuda(
-            self.compiler.object_filenames, self.build_lib
+            self.compiler.object_filenames, self.build_temp
         )
         self._record_op_info()
 
-        print("Compiling user custom op, it will cost a few seconds.....")
-        build_ext.build_extensions(self)
+        try:
+            if cuda_dlink_post_cflags and self.compiler.compiler_type != 'msvc':
+                original_link = self.compiler.__class__.link_shared_object
+                self.compiler.__class__.link_shared_object = (
+                    unix_custom_link_shared_object
+                )
 
-        if self.compiler.compiler_type == 'msvc':
-            self.compiler.compile = original_compile
-        else:
-            self.compiler.__class__.compile = original_compile
+            print("Compiling user custom op, it will cost a few seconds.....")
+            build_ext.build_extensions(self)
+        finally:
+            if self.compiler.compiler_type == 'msvc':
+                self.compiler.compile = original_compile
+            else:
+                self.compiler.__class__.compile = original_compile
+                if original_link:
+                    self.compiler.__class__.link_shared_object = original_link
 
         # Reset runtime library path on MacOS platform
         so_path = self.get_ext_fullpath(self.extensions[0]._full_name)
@@ -1375,116 +1478,6 @@ def load(
     return custom_op_api
 
 
-def _get_cuda_arch_flags(cflags: list[str] | None = None) -> list[str]:
-    """
-    Determine CUDA arch flags to use.
-
-    For an arch, say "6.1", the added compile flag will be
-    ``-gencode=arch=compute_61,code=sm_61``.
-    For an added "+PTX", an additional
-    ``-gencode=arch=compute_xx,code=compute_xx`` is added.
-    """
-    # If cflags is given, there may already be user-provided arch flags in it
-    if cflags is not None:
-        for flag in cflags:
-            if any(x in flag for x in ['PADDLE_EXTENSION_NAME']):
-                continue
-            if 'arch' in flag:
-                return []
-
-    named_arches = collections.OrderedDict(
-        [
-            ('Pascal', '6.0;6.1+PTX'),
-            ('Volta+Tegra', '7.2'),
-            ('Volta', '7.0+PTX'),
-            ('Turing', '7.5+PTX'),
-            ('Ampere+Tegra', '8.7'),
-            ('Ampere', '8.0;8.6+PTX'),
-            ('Ada', '8.9+PTX'),
-            ('Hopper', '9.0+PTX'),
-            ('Blackwell+Tegra', '10.1'),
-            ('Blackwell', '10.0;12.0+PTX'),
-        ]
-    )
-
-    supported_arches = [
-        '6.0',
-        '6.1',
-        '6.2',
-        '7.0',
-        '7.2',
-        '7.5',
-        '8.0',
-        '8.6',
-        '8.7',
-        '8.9',
-        '9.0',
-        '9.0a',
-        '10.0',
-        '10.0a',
-        '10.1',
-        '10.1a',
-        '12.0',
-        '12.0a',
-    ]
-    valid_arch_strings = supported_arches + [
-        s + "+PTX" for s in supported_arches
-    ]
-
-    _arch_list = os.environ.get("PADDLE_CUDA_ARCH_LIST")
-
-    if not _arch_list:
-        warnings.warn(
-            "PADDLE_CUDA_ARCH_LIST are not set, all archs for visible cards are included for compilation. \n"
-            "If this is not desired, please set os.environ['PADDLE_CUDA_ARCH_LIST']."
-        )
-        arch_list = []
-        dev_types = core.get_all_custom_device_type()
-        if core.is_compiled_with_cuda():
-            for dev_id in range(paddle.device.cuda.device_count()):
-                capability = paddle.device.cuda.get_device_capability(
-                    dev_id
-                )  # (major, minor)
-                arch = f"{capability[0]}.{capability[1]}"
-                if arch not in arch_list:
-                    arch_list.append(arch)
-            arch_list = sorted(arch_list)
-            if arch_list:
-                arch_list[-1] += '+PTX'
-        elif dev_types and core.is_compiled_with_custom_device(dev_types[0]):
-            for dev_id in range(paddle.device.device_count()):
-                capability = paddle.device.get_device_capability(
-                    dev_types[0], dev_id
-                )
-                arch = f"{capability[0]}.{capability[1]}"
-                if arch not in arch_list:
-                    arch_list.append(arch)
-            arch_list = sorted(arch_list)
-            if arch_list:
-                arch_list[-1] += '+PTX'
-        else:
-            raise RuntimeError(
-                "Paddle is not compiled with CUDA or Custom Device, cannot determine CUDA arch."
-            )
-    else:
-        _arch_list = _arch_list.replace(' ', ';')
-        for named_arch, archival in named_arches.items():
-            _arch_list = _arch_list.replace(named_arch, archival)
-        arch_list = _arch_list.split(';')
-
-    flags = []
-    for arch in arch_list:
-        if arch not in valid_arch_strings:
-            raise ValueError(f"Unknown CUDA arch ({arch}) or GPU not supported")
-        version = arch.split('+')[0]
-        major, minor = version.split('.')
-        num = f"{major}{minor}"
-        flags.append(f"-gencode=arch=compute_{num},code=sm_{num}")
-        if arch.endswith('+PTX'):
-            flags.append(f"-gencode=arch=compute_{num},code=compute_{num}")
-    return sorted(set(flags))
-
-
 def _get_pybind11_abi_build_flags():
     abi_cflags = []
     for pname in ["COMPILER_TYPE", "STDLIB", "BUILD_ABI"]:
@@ -1510,3 +1503,14 @@ def _get_num_workers(verbose: bool) -> int | None:
             file=sys.stderr,
         )
     return None
+
+
+def _compute_worker_number(
+    requested_workers: int | None, cpu_count: int | None, num_objects: int
+) -> int:
+    cpu_count = cpu_count or 1
+    if requested_workers is None:
+        worker_number = min(cpu_count, num_objects)
+    else:
+        worker_number = max(1, min(requested_workers, cpu_count, num_objects))
+    return worker_number

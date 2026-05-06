@@ -16,13 +16,20 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from paddle import _C_ops
+from paddle.utils import deprecated
 
-from ....framework import LayerHelper, in_dynamic_or_pir_mode
+from ....framework import in_dynamic_or_pir_mode
 
 if TYPE_CHECKING:
     from paddle import Tensor
 
 
+@deprecated(
+    since="3.3.0",
+    update_to="paddle.nn.functional.swiglu",
+    level=1,
+    reason="paddle.incubate.nn.functional.swiglu will be removed in future. Please use paddle.nn.functional.swiglu instead.",
+)
 def swiglu(
     x: Tensor, y: Tensor | None = None, name: str | None = None
 ) -> Tensor:
@@ -43,7 +50,7 @@ def swiglu(
         A Tensor with the same data type with x and y.
 
     Examples:
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
             >>> import paddle.incubate.nn.functional as F
@@ -56,10 +63,3 @@ def swiglu(
     """
     if in_dynamic_or_pir_mode():
         return _C_ops.swiglu(x, y)
-    else:
-        helper = LayerHelper("swiglu", **locals())
-        out = helper.create_variable_for_type_inference(dtype=x.dtype)
-        helper.append_op(
-            type="swiglu", inputs={"x": x, "y": y}, outputs={"out": out}
-        )
-        return out

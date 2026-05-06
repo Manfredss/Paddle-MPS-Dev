@@ -63,7 +63,7 @@ void UniqueRawKernel(const Context& dev_ctx,
                      DenseTensor* indices,
                      DenseTensor* index,
                      DenseTensor* counts) {
-  if (dtype == phi::DataType::INT32) {
+  if (dtype == DataType::INT32) {
     PADDLE_ENFORCE_LE(
         x.numel(),
         INT_MAX,
@@ -74,39 +74,37 @@ void UniqueRawKernel(const Context& dev_ctx,
             x.numel()));
   }
   if (!is_sorted) {
-    phi::VisitDataType(
-        dtype,
-        phi::funcs::UniqueOpFunctor<Context, T>(dev_ctx, out, index, &x));
+    VisitDataType(dtype,
+                  funcs::UniqueOpFunctor<Context, T>(dev_ctx, out, index, &x));
     return;
   }
 
   if (axis.empty()) {
-    phi::VisitDataTypeTiny(
+    VisitDataTypeTiny(
         dtype,
-        phi::funcs::UniqueFlattenedTensorFunctor<Context, T>(dev_ctx,
-                                                             x,
-                                                             out,
-                                                             indices,
-                                                             index,
-                                                             counts,
-                                                             return_index,
-                                                             return_inverse,
-                                                             return_counts));
+        funcs::UniqueFlattenedTensorFunctor<Context, T>(dev_ctx,
+                                                        x,
+                                                        out,
+                                                        indices,
+                                                        index,
+                                                        counts,
+                                                        return_index,
+                                                        return_inverse,
+                                                        return_counts));
   } else {
     int axis_value = axis[0];
     axis_value = (axis_value == -1) ? (x.dims().size() - 1) : axis_value;
-    phi::VisitDataTypeTiny(
-        dtype,
-        phi::funcs::UniqueDimFunctor<Context, T>(dev_ctx,
-                                                 x,
-                                                 out,
-                                                 indices,
-                                                 index,
-                                                 counts,
-                                                 axis_value,
-                                                 return_index,
-                                                 return_inverse,
-                                                 return_counts));
+    VisitDataTypeTiny(dtype,
+                      funcs::UniqueDimFunctor<Context, T>(dev_ctx,
+                                                          x,
+                                                          out,
+                                                          indices,
+                                                          index,
+                                                          counts,
+                                                          axis_value,
+                                                          return_index,
+                                                          return_inverse,
+                                                          return_counts));
   }
 }
 

@@ -59,17 +59,14 @@
 #include <hip/hip_bf16.h>
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
-#include <hipcub/hipcub.hpp>
-namespace cub = hipcub;
 #define __nv_bfloat16 __hip_bfloat16
 #define __nv_bfloat162 __hip_bfloat162
 #else
 #include <cuda_fp16.h>
 #include <float.h>
-#include <cub/cub.cuh>
 #endif
-
 #include "paddle/phi/common/datatype_traits.h"
+#include "paddle/phi/kernels/funcs/cub.h"
 #include "paddle/phi/kernels/funcs/math_function.h"
 
 #ifdef PADDLE_WITH_HIP
@@ -3735,14 +3732,14 @@ struct MMHAStore {
   template <typename Vec>
   __device__ void store(const Vec& src, float scale, size_t idx) {
     constexpr int VecSize = sizeof(Vec) / sizeof(T);
-    using TVec = phi::AlignedVector<T, VecSize>;
+    using TVec = AlignedVector<T, VecSize>;
     TVec src_vec;
     *reinterpret_cast<Vec*>(&src_vec) = src;
 #pragma unroll
     for (int i = 0; i < VecSize; i++) {
       src_vec[i] = static_cast<T>(static_cast<float>(src_vec[i]) * scale);
     }
-    phi::Store<T, VecSize>(src_vec, dst_ + idx);
+    Store<T, VecSize>(src_vec, dst_ + idx);
   }
 
   StoreT* dst_;
@@ -3756,21 +3753,21 @@ struct MMHAStore<T, T, true> {
   template <typename Vec>
   __device__ void store(Vec& src, int idx) {  // NOLINT
     constexpr int VecSize = sizeof(Vec) / sizeof(T);
-    using TVec = phi::AlignedVector<T, VecSize>;
+    using TVec = AlignedVector<T, VecSize>;
     TVec src_vec;
     TVec shift_vec;
     TVec smooth_vec;
 
     *reinterpret_cast<Vec*>(&src_vec) = src;
-    phi::Load<T, VecSize>(shift_ + idx % cols_, &shift_vec);
-    phi::Load<T, VecSize>(smooth_ + idx % cols_, &smooth_vec);
+    Load<T, VecSize>(shift_ + idx % cols_, &shift_vec);
+    Load<T, VecSize>(smooth_ + idx % cols_, &smooth_vec);
 
 #pragma unroll
     for (int i = 0; i < VecSize; i++) {
       src_vec[i] = (src_vec[i] + shift_vec[i]) * smooth_vec[i];
     }
 
-    phi::Store<T, VecSize>(src_vec, dst_ + idx);
+    Store<T, VecSize>(src_vec, dst_ + idx);
   }
 
   T* dst_;
@@ -3787,16 +3784,16 @@ struct MMHALoad<T, int32_t> {
   template <typename Vec>
   __device__ void load(Vec& dst, int idx) {  // NOLINT
     constexpr int VecSize = sizeof(Vec) / sizeof(T);
-    using SrcVec = phi::AlignedVector<int32_t, VecSize>;
-    using DstVec = phi::AlignedVector<T, VecSize>;
-    using ScaleVec = phi::AlignedVector<float, VecSize>;
+    using SrcVec = AlignedVector<int32_t, VecSize>;
+    using DstVec = AlignedVector<T, VecSize>;
+    using ScaleVec = AlignedVector<float, VecSize>;
 
     SrcVec src_vec;
     DstVec dst_vec;
     ScaleVec scale_vec;
 
-    phi::Load<int32_t, VecSize>(src_ + idx, &src_vec);
-    phi::Load<float, VecSize>(dequant_scales_ + idx % cols_, &scale_vec);
+    Load<int32_t, VecSize>(src_ + idx, &src_vec);
+    Load<float, VecSize>(dequant_scales_ + idx % cols_, &scale_vec);
 #pragma unroll
     for (int i = 0; i < VecSize; i++) {
       dst_vec[i] =
@@ -3826,8 +3823,8 @@ struct MMHAStore<T, int8_t> {
   template <typename Vec>
   __device__ void store(Vec& src, int idx) {  // NOLINT
     constexpr int VecSize = sizeof(Vec) / sizeof(T);
-    using SrcVec = phi::AlignedVector<T, VecSize>;
-    using DstVec = phi::AlignedVector<int8_t, VecSize>;
+    using SrcVec = AlignedVector<T, VecSize>;
+    using DstVec = AlignedVector<int8_t, VecSize>;
 
     SrcVec src_vec;
     *reinterpret_cast<Vec*>(&src_vec) = src;
@@ -3843,7 +3840,7 @@ struct MMHAStore<T, int8_t> {
                                          quant_min_bound_);
     }
 
-    phi::Store<int8_t, VecSize>(dst_vec, dst_ + idx);
+    Store<int8_t, VecSize>(dst_vec, dst_ + idx);
   }
 
   int8_t* dst_;
@@ -3875,8 +3872,8 @@ struct MMHAStore<T, int8_t, true> {
   template <typename Vec>
   __device__ void store(Vec& src, int idx) {  // NOLINT
     constexpr int VecSize = sizeof(Vec) / sizeof(T);
-    using SrcVec = phi::AlignedVector<T, VecSize>;
-    using DstVec = phi::AlignedVector<int8_t, VecSize>;
+    using SrcVec = AlignedVector<T, VecSize>;
+    using DstVec = AlignedVector<int8_t, VecSize>;
 
     SrcVec src_vec;
     DstVec dst_vec;
@@ -3884,8 +3881,8 @@ struct MMHAStore<T, int8_t, true> {
     SrcVec smooth_vec;
 
     *reinterpret_cast<Vec*>(&src_vec) = src;
-    phi::Load<T, VecSize>(shift_ + idx % cols_, &shift_vec);
-    phi::Load<T, VecSize>(smooth_ + idx % cols_, &smooth_vec);
+    Load<T, VecSize>(shift_ + idx % cols_, &shift_vec);
+    Load<T, VecSize>(smooth_ + idx % cols_, &smooth_vec);
 
 #pragma unroll
     for (int i = 0; i < VecSize; i++) {
@@ -3898,7 +3895,7 @@ struct MMHAStore<T, int8_t, true> {
                                          quant_min_bound_);
     }
 
-    phi::Store<int8_t, VecSize>(dst_vec, dst_ + idx);
+    Store<int8_t, VecSize>(dst_vec, dst_ + idx);
   }
 
   int8_t* dst_;

@@ -15,7 +15,6 @@
 #include "paddle/fluid/pir/dialect/operator/interface/infer_symbolic_shape/cinn_op_infer_sym.h"
 #include "paddle/fluid/pir/dialect/operator/interface/infer_symbolic_shape/infer_sym_slice_utils.h"
 #include "paddle/fluid/pir/dialect/operator/interface/infer_symbolic_shape/infer_sym_utils.h"
-#include "paddle/fluid/pir/dialect/operator/interface/infer_symbolic_shape/unary_infer_sym.cc"
 
 namespace cinn::dialect {
 
@@ -83,7 +82,10 @@ bool ConcatOpInferSymbolicShape(pir::Operation *op,
         infer_context->GetShapeOrDataForValue(input_values[0]).shape();
 
     size_t rank = out_dims.size();
-    axis = axis >= 0 ? axis : std::max(int64_t(0), int64_t(axis + rank));
+    // NOTE(large-tensor): axis is a small integer.
+    axis = axis >= 0
+               ? axis
+               : static_cast<int>(std::max(int64_t(0), int64_t(axis + rank)));
 
     for (size_t i = 1; i < input_size; ++i) {
       const auto &operand_shape_or_data =
@@ -216,18 +218,6 @@ bool SplitOpInferSymbolicShape(pir::Operation *op,
   infer_context->SetShapeOrDataForValue(
       op->result(0), symbol::ShapeOrDataDimExprs{output_shape_data_list});
 
-  return true;
-}
-
-bool Pool2dOpInferSymbolicShape(pir::Operation *op,
-                                pir::InferSymbolicShapeContext *infer_context) {
-  const auto &kernel_size_shape_or_data =
-      infer_context->GetShapeOrDataForValue(op->operand_source(1));
-  const auto &kernel_size =
-      paddle::dialect::details::GetExprVecFromData(kernel_size_shape_or_data);
-  infer_context->SetShapeOrDataForValue(
-      op->result(0),
-      Pool2dRawInferSymbolicShape(op, kernel_size, infer_context));
   return true;
 }
 

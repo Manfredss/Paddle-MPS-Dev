@@ -22,12 +22,14 @@
 #include "paddle/phi/core/utils/rw_lock.h"
 
 #include "paddle/phi/backends/c_comm_lib.h"
+#include "paddle/phi/backends/c_cuda_graph_lib.h"
 #include "paddle/phi/backends/device_base.h"
 #include "paddle/phi/backends/device_ext.h"
 #include "paddle/phi/backends/event.h"
 #include "paddle/phi/backends/stream.h"
 #include "paddle/phi/common/port.h"
 
+struct C_CinnInterface;
 namespace phi {
 class PADDLE_API Device final {
  public:
@@ -125,6 +127,10 @@ class PADDLE_API Device final {
 
   std::string Type();
 
+  struct C_CinnInterface* GetCinnInterface() const {
+    return impl_->GetCinnInterface();
+  }
+
  private:
   size_t dev_id_;
   DeviceInterface* impl_;
@@ -184,7 +190,19 @@ class PADDLE_API DeviceManager {
 
   static size_t GetMaxThreadsPerBlock(const Place& place);
 
+  static size_t GetMaxSharedMemPerBlock(const Place& place);
+
+  static size_t GetMaxBlocksPerMultiProcessor(const Place& place);
+
+  static size_t GetWarpSize(const Place& place);
+
+  static size_t GetMaxRegistersPerMultiProcessor(const Place& place);
+
+  static size_t GetPreferredVectorWidth(const Place& place);
+
   static std::array<unsigned int, 3> GetMaxGridDimSize(const Place& place);
+
+  static std::array<unsigned int, 3> GetMaxBlockDimSize(const Place& place);
 
   static bool IsFloat16Supported(const Place& place);
 
@@ -193,7 +211,7 @@ class PADDLE_API DeviceManager {
   static bool IsDnnAvailable(const Place& place);
 
   static void* InitEigenDevice(const Place& place,
-                               phi::stream::stream_t stream,
+                               stream::stream_t stream,
                                phi::Allocator* allocator);
 
   static void DestroyEigenDevice(const Place& place, void* eigen_device);
@@ -223,7 +241,7 @@ class PADDLE_API DeviceManager {
   static void CCLBroadcast(const std::string& device_type,
                            void* data,
                            size_t num,
-                           phi::DataType data_type,
+                           DataType data_type,
                            size_t root,
                            const ccl::CCLComm& ccl_comm,
                            const stream::stream_t& stream);
@@ -231,7 +249,7 @@ class PADDLE_API DeviceManager {
                            void* in_data,
                            void* out_data,
                            size_t num,
-                           phi::DataType data_type,
+                           DataType data_type,
                            ccl::CCLReduceOp reduce_op,
                            const ccl::CCLComm& ccl_comm,
                            const stream::stream_t& stream);
@@ -239,7 +257,7 @@ class PADDLE_API DeviceManager {
                         void* in_data,
                         void* out_data,
                         size_t num,
-                        phi::DataType data_type,
+                        DataType data_type,
                         ccl::CCLReduceOp reduce_op,
                         size_t root_id,
                         const ccl::CCLComm& ccl_comm,
@@ -248,14 +266,14 @@ class PADDLE_API DeviceManager {
                            void* in_data,
                            void* out_data,
                            size_t num,
-                           phi::DataType data_type,
+                           DataType data_type,
                            const ccl::CCLComm& ccl_comm,
                            const stream::stream_t& stream);
   static void CCLReduceScatter(const std::string& device_type,
                                void* in_data,
                                void* out_data,
                                size_t num,
-                               phi::DataType data_type,
+                               DataType data_type,
                                ccl::CCLReduceOp op,
                                const ccl::CCLComm& ccl_comm,
                                const stream::stream_t& stream);
@@ -264,14 +282,14 @@ class PADDLE_API DeviceManager {
   static void CCLSend(const std::string& device_type,
                       void* sendbuf,
                       size_t num,
-                      phi::DataType data_type,
+                      DataType data_type,
                       size_t dst_rank,
                       const ccl::CCLComm& ccl_comm,
                       const stream::stream_t& stream);
   static void CCLRecv(const std::string& device_type,
                       void* recvbuf,
                       size_t num,
-                      phi::DataType data_type,
+                      DataType data_type,
                       size_t src_rank,
                       const ccl::CCLComm& ccl_comm,
                       const stream::stream_t& stream);
@@ -279,10 +297,10 @@ class PADDLE_API DeviceManager {
   static void CCLAllToAll(const std::string& device_type,
                           const void** send_buf,
                           const size_t* send_count,
-                          const phi::DataType* send_dtype,
+                          const DataType* send_dtype,
                           void** recv_buf,
                           const size_t* recv_count,
-                          const phi::DataType* recv_dtype,
+                          const DataType* recv_dtype,
                           size_t rank,
                           size_t nranks,
                           const ccl::CCLComm& comm,
@@ -312,7 +330,7 @@ class PADDLE_API DeviceManager {
 
   static void InitBlasHandle(const Place& place,
                              void** blas_handle,
-                             phi::stream::stream_t stream);
+                             stream::stream_t stream);
 
   static void BlasSetMathMode(const Place& place,
                               void* blas_handle,
@@ -323,6 +341,64 @@ class PADDLE_API DeviceManager {
   static void DestroyBlasHandle(const Place& place, void* blas_handle);
 
   static void DestroyBlasLtHandle(const Place& place, void* blaslt_handle);
+
+  static void InitDnnHandle(const Place& place,
+                            void** dnn_handle,
+                            stream::stream_t stream);
+
+  static void DestroyDnnHandle(const Place& place, void* dnn_handle);
+
+  // cudaGraph
+  static void CUDAStreamBeginCapture(const Place& place,
+                                     stream::stream_t stream,
+                                     graph::streamCaptureMode mode);
+
+  static void CudaStreamEndCapture(const Place& place,
+                                   stream::stream_t stream,
+                                   graph::CUDAGraph_t* pGraph);
+
+  static void CudaGraphLaunch(const Place& place,
+                              graph::CUDAGraphExec_t exec,
+                              stream::stream_t stream);
+
+  static void CudaGraphDestroy(const Place& place, graph::CUDAGraph_t Graph);
+
+  static void CudaGraphExecDestroy(const Place& place,
+                                   graph::CUDAGraphExec_t GraphExec);
+
+  static void CudaGraphInstantiate(const Place& place,
+                                   graph::CUDAGraphExec_t* pGraphExec,
+                                   graph::CUDAGraph_t* pGraph,
+                                   void** pErrorNode,
+                                   char* pLogBuffer,
+                                   size_t bufferSize);
+
+  static void CudaGraphGetNodes(const Place& place,
+                                graph::CUDAGraph_t Graph,
+                                graph::CUDAGraphNode_t* pNodes,
+                                size_t* numNodes);
+
+  static void CudaGraphDebugDotPrint(const Place& place,
+                                     graph::CUDAGraph_t Graph,
+                                     const char* path,
+                                     unsigned int flags);
+
+  static void CudaStreamGetCaptureInfo(
+      const Place& place,
+      stream::stream_t stream,
+      graph::streamCaptureStatus* captureStatus_out,
+      unsigned long long* id_out = nullptr,  // NOLINT
+      graph::CUDAGraph_t* graph_out = nullptr,
+      graph::CUDAGraphNode_t* dependencies_out = nullptr,
+      void** edgeData_out = nullptr,
+      size_t* numDependencies_out = nullptr);
+
+  static void GetParameterSetterForExecGraph(const Place& place,
+                                             graph::CUDAGraph_t graph,
+                                             graph::GraphHookManager* hook);
+
+  static void CudaThreadExchangeStreamCaptureMode(
+      const Place& place, graph::streamCaptureMode* mode);
 
  private:
   DISABLE_COPY_AND_ASSIGN(DeviceManager);

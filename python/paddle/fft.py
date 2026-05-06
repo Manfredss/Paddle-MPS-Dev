@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from paddle import Tensor
-    from paddle._typing import DTypeLike
+    from paddle._typing import DTypeLike, PlaceLike
 
     _NormalizeMode = Literal["forward", "backward", "ortho"]
 __all__ = [
@@ -210,7 +210,7 @@ def fft(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import numpy as np
             >>> import paddle
@@ -284,7 +284,7 @@ def ifft(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import numpy as np
             >>> import paddle
@@ -420,7 +420,7 @@ def irfft(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 
@@ -473,7 +473,7 @@ def hfft(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 
@@ -894,11 +894,11 @@ def irfftn(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 
-            >>> x = paddle.to_tensor([2.+2.j, 2.+2.j, 3.+3.j]).astype(paddle.complex128)
+            >>> x = paddle.to_tensor([2.0 + 2.0j, 2.0 + 2.0j, 3.0 + 3.0j]).astype(paddle.complex128)
             >>> print(x)
             Tensor(shape=[3], dtype=complex128, place=Place(cpu), stop_gradient=True,
             [(2+2j), (2+2j), (3+3j)])
@@ -959,11 +959,11 @@ def hfftn(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 
-            >>> x = paddle.to_tensor([(2+2j), (2+2j), (3+3j)])
+            >>> x = paddle.to_tensor([(2 + 2j), (2 + 2j), (3 + 3j)])
             >>> hfftn_x = paddle.fft.hfftn(x)
             >>> print(hfftn_x)
             Tensor(shape=[4], dtype=float32, place=Place(cpu), stop_gradient=True,
@@ -1230,7 +1230,7 @@ def rfft2(
 
     Examples:
 
-    .. code-block:: python
+    .. code-block:: pycon
 
         >>> import paddle
 
@@ -1302,11 +1302,11 @@ def irfft2(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 
-            >>> x = paddle.to_tensor([[3.+3.j, 2.+2.j, 3.+3.j], [2.+2.j, 2.+2.j, 3.+3.j]])
+            >>> x = paddle.to_tensor([[3.0 + 3.0j, 2.0 + 2.0j, 3.0 + 3.0j], [2.0 + 2.0j, 2.0 + 2.0j, 3.0 + 3.0j]])
             >>> irfft2_x = paddle.fft.irfft2(x)
             >>> print(irfft2_x)
             Tensor(shape=[2, 4], dtype=float32, place=Place(cpu), stop_gradient=True,
@@ -1363,11 +1363,11 @@ def hfft2(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 
-            >>> x = paddle.to_tensor([[3.+3.j, 2.+2.j, 3.+3.j], [2.+2.j, 2.+2.j, 3.+3.j]])
+            >>> x = paddle.to_tensor([[3.0 + 3.0j, 2.0 + 2.0j, 3.0 + 3.0j], [2.0 + 2.0j, 2.0 + 2.0j, 3.0 + 3.0j]])
             >>> hfft2_x = paddle.fft.hfft2(x)
             >>> print(hfft2_x)
             Tensor(shape=[2, 4], dtype=float32, place=Place(cpu), stop_gradient=True,
@@ -1427,7 +1427,7 @@ def ihfft2(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 
@@ -1469,6 +1469,10 @@ def fftfreq(
     d: float = 1.0,
     dtype: DTypeLike | None = None,
     name: str | None = None,
+    *,
+    out: paddle.Tensor | None = None,
+    device: PlaceLike | None = None,
+    requires_grad: bool = False,
 ) -> Tensor:
     """
     Return the Discrete Fourier Transform sample frequencies.
@@ -1487,6 +1491,11 @@ def fftfreq(
         d (float, optional): Sample spacing (inverse of the sampling rate). Defaults is 1.
         dtype (str, optional): The data type of returns. Defaults is the data type of returns
             of ``paddle.get_default_dtype()``.
+        out(Tensor, optional): The output tensor.
+        device(PlaceLike|None, optional): The desired device of returned tensor.
+            if None, uses the current device for the default tensor type (see paddle.device.set_device()).
+            device will be the CPU for CPU tensor types and the current CUDA device for CUDA tensor types. Default: None.
+        requires_grad(bool, optional):  If autograd should record operations on the returned tensor. Default: False.
         name (str, optional): The default value is None.  Normally there is no need for user to set
             this property. For more information, please refer to :ref:`api_guide_Name`.
 
@@ -1495,7 +1504,7 @@ def fftfreq(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 
@@ -1508,13 +1517,24 @@ def fftfreq(
     if d * n == 0:
         raise ValueError("d or n should not be 0.")
 
-    dtype = paddle.framework.get_default_dtype()
+    if dtype is None:
+        dtype = paddle.framework.get_default_dtype()
     val = 1.0 / (n * d)
     pos_max = (n + 1) // 2
     neg_max = n // 2
-    indices = paddle.arange(-neg_max, pos_max, dtype=dtype, name=name)
+    indices = paddle.arange(
+        -neg_max,
+        pos_max,
+        dtype=dtype,
+        device=device,
+        requires_grad=requires_grad,
+        name=name,
+    )
     indices = paddle.roll(indices, -neg_max, name=name)
-    return indices * val
+    ret = indices * val
+    if out is not None:
+        paddle.assign(ret, out)
+    return ret
 
 
 def rfftfreq(
@@ -1522,6 +1542,10 @@ def rfftfreq(
     d: float = 1.0,
     dtype: DTypeLike | None = None,
     name: str | None = None,
+    *,
+    out: paddle.Tensor | None = None,
+    device: PlaceLike | None = None,
+    requires_grad: bool = False,
 ) -> Tensor:
     """
     Return the Discrete Fourier Transform sample frequencies.
@@ -1541,6 +1565,11 @@ def rfftfreq(
         d (float, optional): Sample spacing (inverse of the sampling rate). Defaults is 1.
         dtype (str, optional): The data type of returns. Defaults is the data type of returns
             of ``paddle.get_default_dtype()``.
+        out(Tensor, optional): The output tensor.
+        device(PlaceLike|None, optional): The desired device of returned tensor.
+            if None, uses the current device for the default tensor type (see paddle.device.set_device()).
+            device will be the CPU for CPU tensor types and the current CUDA device for CUDA tensor types. Default: None.
+        requires_grad(bool, optional):  If autograd should record operations on the returned tensor. Default: False.
         name (str, optional): The default value is None.  Normally there is no need for user to set
             this property. For more information, please refer to :ref:`api_guide_Name`.
 
@@ -1549,7 +1578,7 @@ def rfftfreq(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 
@@ -1563,11 +1592,22 @@ def rfftfreq(
     if d * n == 0:
         raise ValueError("d or n should not be 0.")
 
-    dtype = paddle.framework.get_default_dtype()
+    if dtype is None:
+        dtype = paddle.framework.get_default_dtype()
     val = 1.0 / (n * d)
     pos_max = 1 + n // 2
-    indices = paddle.arange(0, pos_max, dtype=dtype, name=name)
-    return indices * val
+    indices = paddle.arange(
+        0,
+        pos_max,
+        dtype=dtype,
+        device=device,
+        requires_grad=requires_grad,
+        name=name,
+    )
+    ret = indices * val
+    if out is not None:
+        paddle.assign(ret, out)
+    return ret
 
 
 @param_two_alias(["x", "input"], ["axes", "dim"])
@@ -1593,7 +1633,7 @@ def fftshift(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 
@@ -1642,7 +1682,7 @@ def ifftshift(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> import paddle
 

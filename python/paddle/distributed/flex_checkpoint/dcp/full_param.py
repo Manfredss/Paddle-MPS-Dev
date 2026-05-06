@@ -27,7 +27,7 @@ from typing import (
 import paddle
 
 from ..aoa.aoa_engine import SUPPORTED_DTYPES, AOAEngine
-from .load_state_dict import (
+from .resharder import (
     ReadItem,
 )
 from .sharded_weight import (
@@ -472,7 +472,7 @@ class SingleCommGroupFullParamAssembler(BaseAssembler):
         """Simple assembly path for a single GPU."""
         for k, v in self.filtered_sharded_state_dict.items():
             assert v.local_shape == v.global_shape, (
-                "Single card params must not be sharded."
+                "Single card params must not be sharded.But now the key is {k}, the local_shape is {v.local_shape}, the global_shape is {v.global_shape}."
             )
 
         for k, shard_mappings in self.destination_sharded_mappings.items():
@@ -522,9 +522,14 @@ class SingleCommGroupFullParamAssembler(BaseAssembler):
             else:
                 local_tensor = paddle.empty(item.slice_shape, dtype=item.dtype)
 
+            on_cpu = local_tensor.place.is_cpu_place()
+            if on_cpu:
+                local_tensor = local_tensor.cuda()
             paddle.distributed.broadcast(
                 local_tensor, src=cur_src_rank, group=self.process_group
             )
+            if on_cpu:
+                local_tensor = local_tensor.cpu()
 
             shard_desc = ShardedWeightDesc(
                 key=item.tensor_name,
@@ -573,6 +578,9 @@ class HVCommGroupFullParamAssembler(BaseAssembler):
         super().__init__(sharded_state_dict, aoa_config, num_splits, idx)
         self.h_group = horizontal_group
         self.v_group = vertical_group
+        self.using_1d_comm_group = (
+            self.v_group is None or self.v_group.nranks == 1
+        )
 
         self.topology: list[list[int]] = []
         self.vertical_ranks: list[set[int]] = []
@@ -589,7 +597,12 @@ class HVCommGroupFullParamAssembler(BaseAssembler):
         paddle.distributed.all_gather_object(h_obj_list, info, h_group)
 
         v_obj_list = []
-        paddle.distributed.all_gather_object(v_obj_list, h_obj_list, v_group)
+        if not self.using_1d_comm_group:
+            paddle.distributed.all_gather_object(
+                v_obj_list, h_obj_list, v_group
+            )
+        else:
+            v_obj_list = [h_obj_list]
 
         gathered_info = [x for sublist in v_obj_list for x in sublist]
         return gathered_info
@@ -602,7 +615,7 @@ class HVCommGroupFullParamAssembler(BaseAssembler):
         self._build_topology()
 
         source_state_shard_info = self.build_global_state_shard_info(
-            h_group=self.h_group, v_grou=self.v_group
+            h_group=self.h_group, v_group=self.v_group
         )
         self._prepare_metainfo(source_state_shard_info)
         self._build_read_plan(
@@ -614,9 +627,12 @@ class HVCommGroupFullParamAssembler(BaseAssembler):
         paddle.distributed.all_gather_object(
             h_ranks, self.cur_rank, self.h_group
         )
-        paddle.distributed.all_gather_object(
-            self.topology, h_ranks, self.v_group
-        )
+        if not self.using_1d_comm_group:
+            paddle.distributed.all_gather_object(
+                self.topology, h_ranks, self.v_group
+            )
+        else:
+            self.topology = [h_ranks]
         self.vertical_ranks = [set(col) for col in zip(*self.topology)]
         self.horizontal_index = {
             rank: i
@@ -750,9 +766,10 @@ class HVCommGroupFullParamAssembler(BaseAssembler):
             buffer = paddle.empty(read_item.slice_shape, dtype=read_item.dtype)
 
         if op_type == OperationType.BROADCAST_ALLGATHER:
-            paddle.distributed.broadcast(
-                buffer, src=read_item.src_rank, group=self.v_group
-            )
+            if not self.using_1d_comm_group:
+                paddle.distributed.broadcast(
+                    buffer, src=read_item.src_rank, group=self.v_group
+                )
             tensor_list = []
             paddle.distributed.all_gather(
                 tensor_list, buffer, group=self.h_group
@@ -763,9 +780,10 @@ class HVCommGroupFullParamAssembler(BaseAssembler):
                 self.vertical_ranks[self.horizontal_index[src_rank]]
             )
             if self.cur_rank in v_ranks:
-                paddle.distributed.broadcast(
-                    buffer, src=src_rank, group=self.v_group
-                )
+                if not self.using_1d_comm_group:
+                    paddle.distributed.broadcast(
+                        buffer, src=src_rank, group=self.v_group
+                    )
             src_rank = v_ranks[self.vertical_index[self.cur_rank]]
             paddle.distributed.broadcast(
                 buffer, src=src_rank, group=self.h_group
@@ -810,7 +828,7 @@ def full_param(
     v_group = kwargs.pop("v_group", None)
     process_group = kwargs.pop("process_group", None)
     num_splits = kwargs.pop("num_splits", 1)
-    memory_growth_threshold = kwargs.pop("memory_growth_threshold", 8 * (2**32))
+    memory_growth_threshold = kwargs.pop("memory_growth_threshold", 8 * (2**30))
     idx = kwargs.pop("shard_idx", 0)
     assert (h_group and v_group) or not (h_group or v_group), (
         "Both horizontal and vertical groups must be provided when using FullParamAssembler."

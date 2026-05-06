@@ -45,8 +45,10 @@ struct CalcReducedAttnScoresParams : public FlashAttnParamsBase {
                             _scale,
                             /*_causal=*/false,
                             q_dtype,
-                            paddle::optional<DenseTensor>{},
-                            paddle::optional<DenseTensor>{}) {}
+                            optional<DenseTensor>{},
+                            optional<DenseTensor>{},
+                            /*_unpadded_lse=*/false,
+                            /*_total_q*/ 0) {}
 };
 #endif
 
@@ -71,7 +73,7 @@ void CalcReducedAttnScoresKernel(const Context& dev_ctx,
 
   if (!reduced_scores->IsInitialized())
     dev_ctx.template Alloc<float>(reduced_scores);
-  phi::funcs::SetConstant<Context, float> set_zero;
+  funcs::SetConstant<Context, float> set_zero;
   set_zero(dev_ctx, reduced_scores, 0.0f);
   // q, k, v [batch_size, seq_len, num_heads, head_dim]
   const int64_t batch_size = q.dims()[0];
@@ -98,32 +100,31 @@ void CalcReducedAttnScoresKernel(const Context& dev_ctx,
 
   cudaStream_t stream = dev_ctx.stream();
 
-  bool succ =
-      phi::dynload::calc_reduced_attn_scores(q.data(),
-                                             k.data(),
-                                             softmax_lse.data(),
-                                             reduced_scores->data(),
-                                             /*softmax_ptr=*/nullptr,
-                                             params.batch_size,
-                                             params.max_seqlen_q,
-                                             params.max_seqlen_k,
-                                             params.num_heads,
-                                             params.num_heads_k,
-                                             params.head_size,
-                                             params.softmax_scale,
-                                             /*return_softmax=*/false,
-                                             params.is_bf16,
-                                             /*num_splits=*/0,
-                                             stream,
-                                             q.strides()[1],
-                                             k.strides()[1],
-                                             reduced_scores->strides()[1],
-                                             q.strides()[2],
-                                             k.strides()[2],
-                                             reduced_scores->strides()[2],
-                                             q.strides()[0],
-                                             k.strides()[0],
-                                             reduced_scores->strides()[0]);
+  bool succ = dynload::calc_reduced_attn_scores(q.data(),
+                                                k.data(),
+                                                softmax_lse.data(),
+                                                reduced_scores->data(),
+                                                /*softmax_ptr=*/nullptr,
+                                                params.batch_size,
+                                                params.max_seqlen_q,
+                                                params.max_seqlen_k,
+                                                params.num_heads,
+                                                params.num_heads_k,
+                                                params.head_size,
+                                                params.softmax_scale,
+                                                /*return_softmax=*/false,
+                                                params.is_bf16,
+                                                /*num_splits=*/0,
+                                                stream,
+                                                q.strides()[1],
+                                                k.strides()[1],
+                                                reduced_scores->strides()[1],
+                                                q.strides()[2],
+                                                k.strides()[2],
+                                                reduced_scores->strides()[2],
+                                                q.strides()[0],
+                                                k.strides()[0],
+                                                reduced_scores->strides()[0]);
   CheckFlashAttnStatus(succ);
 #else
   RaiseNotSupportedError();

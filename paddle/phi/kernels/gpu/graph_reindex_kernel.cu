@@ -19,19 +19,11 @@
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
 #include <thrust/sequence.h>
-
-#ifdef __NVCC__
-#include <cub/cub.cuh>
-#endif
-#ifdef __HIPCC__
-#include <hipcub/hipcub.hpp>
-namespace cub = hipcub;
-#endif
-
 #include "paddle/phi/backends/gpu/gpu_context.h"
 #include "paddle/phi/backends/gpu/gpu_primitives.h"
 #include "paddle/phi/common/memory_utils.h"
 #include "paddle/phi/core/kernel_registry.h"
+#include "paddle/phi/kernels/funcs/cub.h"
 #include "paddle/phi/kernels/gpu/graph_reindex_funcs.h"
 
 namespace phi {
@@ -48,14 +40,14 @@ __global__ void InitializeHashTable(T* tensor, int len) {
 }
 
 template <typename T, typename Context>
-std::shared_ptr<phi::Allocation> FillHashTable(const Context& dev_ctx,
-                                               const T* input,
-                                               int num_input,
-                                               int64_t len_hashtable,
-                                               T* keys,
-                                               int* values,
-                                               int* key_index,
-                                               int* final_nodes_len) {
+std::shared_ptr<Allocation> FillHashTable(const Context& dev_ctx,
+                                          const T* input,
+                                          int num_input,
+                                          int64_t len_hashtable,
+                                          T* keys,
+                                          int* values,
+                                          int* key_index,
+                                          int* final_nodes_len) {
   const auto place = dev_ctx.GetPlace();
 
   int block = 1024;
@@ -81,7 +73,7 @@ std::shared_ptr<phi::Allocation> FillHashTable(const Context& dev_ctx,
 
   int total_unique_items = item_count[num_input];
   auto unique_items =
-      phi::memory_utils::AllocShared(place, total_unique_items * sizeof(T));
+      memory_utils::AllocShared(place, total_unique_items * sizeof(T));
   T* unique_items_data = reinterpret_cast<T*>(unique_items->ptr());
   *final_nodes_len = total_unique_items;
 
@@ -184,12 +176,11 @@ void Reindex(const Context& dev_ctx,
   int64_t log_num = 1 << static_cast<size_t>(1 + std::log2(num >> 1));
   int64_t table_size = log_num << 1;
 
-  auto keys =
-      phi::memory_utils::Alloc(dev_ctx.GetPlace(), table_size * sizeof(T));
+  auto keys = memory_utils::Alloc(dev_ctx.GetPlace(), table_size * sizeof(T));
   auto values =
-      phi::memory_utils::Alloc(dev_ctx.GetPlace(), table_size * sizeof(int));
+      memory_utils::Alloc(dev_ctx.GetPlace(), table_size * sizeof(int));
   auto key_index =
-      phi::memory_utils::Alloc(dev_ctx.GetPlace(), table_size * sizeof(int));
+      memory_utils::Alloc(dev_ctx.GetPlace(), table_size * sizeof(int));
   T* keys_ptr = reinterpret_cast<T*>(keys->ptr());
   int* values_ptr = reinterpret_cast<int*>(values->ptr());
   int* key_index_ptr = reinterpret_cast<int*>(key_index->ptr());
@@ -205,7 +196,7 @@ void Reindex(const Context& dev_ctx,
           key_index_ptr, table_size);
 
   int unique_len = 0;
-  std::shared_ptr<phi::Allocation> unique_items =
+  std::shared_ptr<Allocation> unique_items =
       FillHashTable<T, Context>(dev_ctx,
                                 thrust::raw_pointer_cast(out_nodes->data()),
                                 out_nodes->size(),
@@ -341,8 +332,8 @@ void GraphReindexKernel(const Context& dev_ctx,
                         const DenseTensor& x,
                         const DenseTensor& neighbors,
                         const DenseTensor& count,
-                        const paddle::optional<DenseTensor>& hashtable_value,
-                        const paddle::optional<DenseTensor>& hashtable_index,
+                        const optional<DenseTensor>& hashtable_value,
+                        const optional<DenseTensor>& hashtable_index,
                         DenseTensor* reindex_src,
                         DenseTensor* reindex_dst,
                         DenseTensor* out_nodes) {
@@ -351,12 +342,14 @@ void GraphReindexKernel(const Context& dev_ctx,
   const T* x_data = x.data<T>();
   const T* neighbors_data = neighbors.data<T>();
   const int* count_data = count.data<int>();
-  const int bs = x.dims()[0];
+  int64_t bs = x.dims()[0];
+
   PADDLE_ENFORCE_NE(
       0,
       bs,
       errors::InvalidArgument("The first of dims should not be equal to 0."));
-  const int num_edges = neighbors.dims()[0];
+  int64_t num_edges = neighbors.dims()[0];
+
   reindex_src->Resize({num_edges});
 
   T* reindex_src_data = dev_ctx.template Alloc<T>(reindex_src);
@@ -406,6 +399,8 @@ void GraphReindexKernel(const Context& dev_ctx,
                          count_data,
                          num_edge_types,
                          bs);
+  // TODO(large-tensor): Resize not support int64
+  PADDLE_ENFORCE_LE_INT_MAX(unique_nodes.size(), "unique_nodes.size()");
   out_nodes->Resize({static_cast<int>(unique_nodes.size())});
   T* out_nodes_data = dev_ctx.template Alloc<T>(out_nodes);
   thrust::copy(unique_nodes.begin(), unique_nodes.end(), out_nodes_data);

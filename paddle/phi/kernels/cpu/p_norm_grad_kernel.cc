@@ -22,12 +22,8 @@
 
 namespace phi {
 
-inline void GetDims(const phi::DDim& dim,
-                    int axis,
-                    int* pre,
-                    int* n,
-                    int* post,
-                    bool asvector) {
+inline void GetDims(
+    const DDim& dim, int axis, int* pre, int* n, int* post, bool asvector) {
   *pre = 1;
   *post = 1;
   *n = static_cast<int>(dim[axis]);
@@ -48,7 +44,7 @@ void PNormGradKernel(const Context& dev_ctx,
                      const DenseTensor& x,
                      const DenseTensor& out,
                      const DenseTensor& out_grad,
-                     float porder,
+                     double porder,
                      int axis,
                      float epsilon,
                      bool keepdim UNUSED,
@@ -71,10 +67,10 @@ void PNormGradKernel(const Context& dev_ctx,
 
   auto* place = dev_ctx.eigen_device();
 
-  auto x_e = phi::EigenVector<T>::Flatten(*in_x);
-  auto dx_e = phi::EigenVector<T>::Flatten(*out_dx);
-  auto norm_e = phi::EigenVector<T>::Flatten(*in_norm);
-  auto norm_dy_e = phi::EigenVector<T>::Flatten(*in_norm_dy);
+  auto x_e = EigenVector<T>::Flatten(*in_x);
+  auto dx_e = EigenVector<T>::Flatten(*out_dx);
+  auto norm_e = EigenVector<T>::Flatten(*in_norm);
+  auto norm_dy_e = EigenVector<T>::Flatten(*in_norm_dy);
 
   auto xr = x_e.reshape(shape);
   auto dx = dx_e.reshape(shape);
@@ -85,15 +81,15 @@ void PNormGradKernel(const Context& dev_ctx,
   Eigen::DSizes<int, 3> bcast(1, n, 1);
 
   if (porder == 0) {
-    phi::funcs::SetConstant<Context, T> set_zero;
+    funcs::SetConstant<Context, T> set_zero;
     set_zero(dev_ctx, out_dx, static_cast<T>(0));
   } else if (porder == INFINITY || porder == -INFINITY) {
     dx.device(*place) = (xr.abs() == norm.broadcast(bcast)).template cast<T>() *
                         xr.sign() * norm_dy.broadcast(bcast);
   } else {
     dx.device(*place) =
-        (xr.abs()).pow(porder - 1.0f) /
-        ((norm.broadcast(bcast)).pow(porder - 1.0f) + xr.constant(eps));
+        (xr.abs()).pow(porder - 1.0) /
+        ((norm.broadcast(bcast)).pow(porder - 1.0) + xr.constant(eps));
     dx.device(*place) = dx * norm_dy.broadcast(bcast) * xr.sign();
   }
 }

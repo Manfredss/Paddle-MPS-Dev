@@ -26,6 +26,7 @@ from paddle.framework import (
     in_dynamic_mode,
     in_dynamic_or_pir_mode,
 )
+from paddle.utils.deprecated import deprecated
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -509,6 +510,11 @@ def fused_bias_dropout_residual_layer_norm(
         return final_out
 
 
+@deprecated(
+    since="3.4.0",
+    level=1,
+    update_to="paddle.nn.functional.scaled_dot_product_attention",
+)
 def fused_multi_head_attention(
     x: Tensor,
     qkv_weight: Tensor,
@@ -626,7 +632,7 @@ def fused_multi_head_attention(
 
     Examples:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             >>> # doctest: +REQUIRES(env:GPU)
             >>> import paddle
@@ -648,9 +654,8 @@ def fused_multi_head_attention(
 
             >>> # output: [batch_size, seq_len, embed_dim]
             >>> output = F.fused_multi_head_attention(
-            ...     x, qkv_weight, linear_weight, False,
-            ...     None, None, None, None, 1e-5, qkv_bias,
-            ...     linear_bias, None, attn_mask)
+            ...     x, qkv_weight, linear_weight, False, None, None, None, None, 1e-5, qkv_bias, linear_bias, None, attn_mask
+            ... )
             >>> print(output.shape)
             paddle.Size([2, 4, 128])
     """

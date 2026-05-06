@@ -121,9 +121,9 @@ LinkFcPattern::LinkFcPattern(PDPattern* pattern, const std::string& name_scope)
 bool LinkXPUOpMaxPass::IsQuant(Node* weight_node) const {
   auto w_dtype = param_scope()
                      ->FindVar(weight_node->Name())
-                     ->GetMutable<phi::DenseTensor>()
+                     ->GetMutable<DenseTensor>()
                      ->dtype();
-  return w_dtype == phi::DataType::INT8;
+  return w_dtype == DataType::INT8;
 }
 
 void LinkXPUOpMaxPass::LinkAddActMax(ir::Graph* graph) const {

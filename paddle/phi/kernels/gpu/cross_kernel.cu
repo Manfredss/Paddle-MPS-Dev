@@ -29,7 +29,7 @@ __global__ void Cross(const T* x,
                       T* out,
                       const int64_t stride,
                       const int64_t N,
-                      phi::funcs::IndexCalculator<int64_t> index_calculator) {
+                      funcs::IndexCalculator<int64_t> index_calculator) {
   CUDA_KERNEL_LOOP_TYPE(i, N, int64_t) {
     int64_t offset = index_calculator(i);
 
@@ -37,14 +37,14 @@ __global__ void Cross(const T* x,
     int64_t pos1 = offset + 1 * stride;
     int64_t pos2 = offset + 2 * stride;
 
-    using MPType = typename phi::dtype::MPTypeTrait<T>::Type;
+    using MT = typename MPTypeTrait<T>::Type;
 
-    MPType x_pos0_mp = static_cast<MPType>(x[pos0]);
-    MPType x_pos1_mp = static_cast<MPType>(x[pos1]);
-    MPType x_pos2_mp = static_cast<MPType>(x[pos2]);
-    MPType y_pos0_mp = static_cast<MPType>(y[pos0]);
-    MPType y_pos1_mp = static_cast<MPType>(y[pos1]);
-    MPType y_pos2_mp = static_cast<MPType>(y[pos2]);
+    MT x_pos0_mp = static_cast<MT>(x[pos0]);
+    MT x_pos1_mp = static_cast<MT>(x[pos1]);
+    MT x_pos2_mp = static_cast<MT>(x[pos2]);
+    MT y_pos0_mp = static_cast<MT>(y[pos0]);
+    MT y_pos1_mp = static_cast<MT>(y[pos1]);
+    MT y_pos2_mp = static_cast<MT>(y[pos2]);
 
     out[pos0] = static_cast<T>(x_pos1_mp * y_pos2_mp - x_pos2_mp * y_pos1_mp);
     out[pos1] = static_cast<T>(x_pos2_mp * y_pos0_mp - x_pos0_mp * y_pos2_mp);
@@ -154,7 +154,7 @@ void CrossKernel(const Context& dev_ctx,
   backends::gpu::GpuLaunchConfig config =
       backends::gpu::GetGpuLaunchConfig1D(dev_ctx, numel / 3);
 
-  auto index_calculator = phi::funcs::IndexCalculator<int64_t>(
+  auto index_calculator = funcs::IndexCalculator<int64_t>(
       merged_dims.size() - 1, cal_dims, left_strides, full_strides);
   Cross<<<config.block_per_grid,
           config.thread_per_block,

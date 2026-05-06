@@ -14,9 +14,48 @@
 
 #pragma once
 
-#define C10_CUDA_CHECK(expr) \
-  do {                       \
-  } while (0);  // TODO(SigureMo): impl this
-#define C10_CUDA_KERNEL_LAUNCH_CHECK(expr) \
-  do {                                     \
-  } while (0);  // TODO(SigureMo): impl this
+#include <exception>
+#include <string>
+
+#if defined(PADDLE_WITH_HIP)
+#include <hip/hip_runtime.h>
+#elif defined(PADDLE_WITH_CUDA)
+#include <cuda_runtime.h>
+#endif
+
+class CompatException : public std::exception {
+ private:
+  std::string message = {};
+
+ public:
+  explicit CompatException(const char* name,
+                           const char* file,
+                           const int line,
+                           const std::string& error) {
+    message = std::string("Failed: ") + name + " error " + file + ":" +
+              std::to_string(line) + " '" + error + "'";
+  }
+
+  const char* what() const noexcept override { return message.c_str(); }
+};
+
+#ifndef C10_CUDA_CHECK
+#if defined(PADDLE_WITH_HIP)
+#define C10_CUDA_CHECK(cmd)                                                   \
+  do {                                                                        \
+    hipError_t e = (cmd);                                                     \
+    if (e != hipSuccess) {                                                    \
+      throw CompatException("HIP", __FILE__, __LINE__, hipGetErrorString(e)); \
+    }                                                                         \
+  } while (0)
+#elif defined(PADDLE_WITH_CUDA)
+#define C10_CUDA_CHECK(cmd)                                   \
+  do {                                                        \
+    cudaError_t e = (cmd);                                    \
+    if (e != cudaSuccess) {                                   \
+      throw CompatException(                                  \
+          "CUDA", __FILE__, __LINE__, cudaGetErrorString(e)); \
+    }                                                         \
+  } while (0)
+#endif
+#endif

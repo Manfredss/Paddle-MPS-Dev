@@ -40,14 +40,12 @@ void DepthwiseConvGradKernel(const Context& dev_ctx,
 
   if (!input_grad && !filter_grad) return;
   // 0-size
-  if (input.numel() == 0) {
-    if (input_grad) dev_ctx.template Alloc<T>(input_grad);
+  if (input.numel() == 0 || filter.numel() == 0) {
+    if (input_grad) {
+      Full<T, Context>(dev_ctx, input_grad->dims(), 0, input_grad);
+    }
     if (filter_grad) {
-      phi::Full<T, Context>(
-          dev_ctx,
-          phi::IntArray(common::vectorize(filter_grad->dims())),
-          0,
-          filter_grad);
+      Full<T, Context>(dev_ctx, filter_grad->dims(), 0, filter_grad);
     }
     return;
   }
@@ -69,7 +67,7 @@ void DepthwiseConvGradKernel(const Context& dev_ctx,
   DWConvParams params(has_fuse_relu, data_format, strides, dilations);
   if (params.UseCudnnDepthwise<Context>(dev_ctx, input, filter)) {
     // Keep same with original kernel.
-    phi::funcs::SetConstant<Context, T> set_zero;
+    funcs::SetConstant<Context, T> set_zero;
     if (input_grad) {
       dev_ctx.template Alloc<T>(input_grad);
       set_zero(dev_ctx, input_grad, static_cast<T>(0));
@@ -78,18 +76,18 @@ void DepthwiseConvGradKernel(const Context& dev_ctx,
       dev_ctx.template Alloc<T>(filter_grad);
       set_zero(dev_ctx, filter_grad, static_cast<T>(0));
     }
-    phi::DepthwiseConvCudnnGradKernel<T>(dev_ctx,
-                                         input,
-                                         filter,
-                                         *output_grad,
-                                         strides_t,
-                                         paddings_t,
-                                         padding_algorithm,
-                                         groups,
-                                         dilations_t,
-                                         data_format,
-                                         input_grad,
-                                         filter_grad);
+    DepthwiseConvCudnnGradKernel<T>(dev_ctx,
+                                    input,
+                                    filter,
+                                    *output_grad,
+                                    strides_t,
+                                    paddings_t,
+                                    padding_algorithm,
+                                    groups,
+                                    dilations_t,
+                                    data_format,
+                                    input_grad,
+                                    filter_grad);
     return;
   }
 #endif
@@ -99,14 +97,14 @@ void DepthwiseConvGradKernel(const Context& dev_ctx,
   auto filter_dims = filter.dims();
 
   DDim in_data_dims;
-  const phi::DataLayout data_layout = common::StringToDataLayout(data_format);
-  if (data_layout != phi::DataLayout::NHWC) {
+  const DataLayout data_layout = StringToDataLayout(data_format);
+  if (data_layout != DataLayout::NHWC) {
     in_data_dims = slice_ddim(in_dims, 2, in_dims.size());
   } else {
     in_data_dims = slice_ddim(in_dims, 1, in_dims.size() - 1);
   }
   DDim filter_data_dims = slice_ddim(filter_dims, 2, filter_dims.size());
-  std::vector<int> ksize = common::vectorize<int>(filter_data_dims);
+  std::vector<int> ksize = vectorize<int>(filter_data_dims);
   UpdatePaddingAndDilation(
       &paddings, &dilations, padding_algorithm, in_data_dims, strides, ksize);
 
@@ -116,14 +114,14 @@ void DepthwiseConvGradKernel(const Context& dev_ctx,
       paddings.erase(paddings.begin() + i + 1);
     }
   }
-  phi::funcs::SetConstant<Context, T> set_zero;
+  funcs::SetConstant<Context, T> set_zero;
 
   if (input_grad) {
     dev_ctx.template Alloc<T>(input_grad);
     set_zero(dev_ctx, input_grad, static_cast<T>(0));
 
     if (fuse_relu) {
-      phi::math::DepthwiseConvInputGradFunctor<Context, T, true>
+      math::DepthwiseConvInputGradFunctor<Context, T, true>
           depthwiseConvInputGrad;
       depthwiseConvInputGrad(dev_ctx,
                              input,
@@ -135,7 +133,7 @@ void DepthwiseConvGradKernel(const Context& dev_ctx,
                              input_grad,
                              data_layout);
     } else {
-      phi::math::DepthwiseConvInputGradFunctor<Context, T, false>
+      math::DepthwiseConvInputGradFunctor<Context, T, false>
           depthwiseConvInputGrad;
       depthwiseConvInputGrad(dev_ctx,
                              input,
@@ -153,7 +151,7 @@ void DepthwiseConvGradKernel(const Context& dev_ctx,
     dev_ctx.template Alloc<T>(filter_grad);
     set_zero(dev_ctx, filter_grad, static_cast<T>(0));
     if (fuse_relu) {
-      phi::math::DepthwiseConvFilterGradFunctor<Context, T, true>
+      math::DepthwiseConvFilterGradFunctor<Context, T, true>
           depthwiseConvFilterGrad;
       depthwiseConvFilterGrad(dev_ctx,
                               input,
@@ -164,7 +162,7 @@ void DepthwiseConvGradKernel(const Context& dev_ctx,
                               filter_grad,
                               data_layout);
     } else {
-      phi::math::DepthwiseConvFilterGradFunctor<Context, T, false>
+      math::DepthwiseConvFilterGradFunctor<Context, T, false>
           depthwiseConvFilterGrad;
       depthwiseConvFilterGrad(dev_ctx,
                               input,

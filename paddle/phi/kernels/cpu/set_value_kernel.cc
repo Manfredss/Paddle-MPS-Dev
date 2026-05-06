@@ -48,15 +48,14 @@ void SetValueImpl(const Context& dev_ctx,
       axes.empty() && decrease_axes.empty() && none_axes.empty() &&
       value.numel() == 1) {
     ExpandKernel<T, Context>(
-        dev_ctx, value, IntArray{phi::vectorize<int64_t>(in.dims())}, out);
+        dev_ctx, value, IntArray{vectorize<int64_t>(in.dims())}, out);
     return;
   }
-  phi::funcs::CheckAndUpdateSliceAttrs(
+  funcs::CheckAndUpdateSliceAttrs(
       in_dims, axes, &starts_local, &ends_local, &steps_local);
-  auto slice_dims = phi::funcs::GetSliceDims(
+  auto slice_dims = funcs::GetSliceDims(
       in_dims, axes, starts_local, ends_local, &steps_local);
-  auto decrease_slice_dims =
-      phi::funcs::GetDecreasedDims(slice_dims, decrease_axes);
+  auto decrease_slice_dims = funcs::GetDecreasedDims(slice_dims, decrease_axes);
   auto slice_dims_for_assign = decrease_slice_dims;
   if (!none_axes.empty()) {
     std::vector<int64_t> slice_dims_with_none;
@@ -80,11 +79,11 @@ void SetValueImpl(const Context& dev_ctx,
       none_axes_cur++;
     }
 
-    slice_dims_for_assign = common::make_ddim(slice_dims_with_none);
+    slice_dims_for_assign = make_ddim(slice_dims_with_none);
   }
-  phi::funcs::CheckIsDimsMatch(slice_dims_for_assign, value.dims());
+  funcs::CheckIsDimsMatch(slice_dims_for_assign, value.dims());
 
-  auto value_shape = phi::vectorize<int64_t>(value.dims());
+  auto value_shape = vectorize<int64_t>(value.dims());
 
   DenseTensor value_tensor = Empty<T>(dev_ctx, IntArray{value_shape});
   value_tensor = value;
@@ -93,9 +92,9 @@ void SetValueImpl(const Context& dev_ctx,
     it = value_shape.erase(it);
   }
   if (value_shape.empty()) value_shape.push_back(1);
-  value_tensor.Resize(phi::make_ddim(value_shape));
+  value_tensor.Resize(value_shape);
 
-  auto expand_shape = phi::vectorize<int64_t>(slice_dims_for_assign);
+  auto expand_shape = vectorize<int64_t>(slice_dims_for_assign);
   for (size_t i = 0; i < expand_shape.size(); i++) {
     if (expand_shape[i] == 0) expand_shape[i] = 1;
   }
@@ -113,9 +112,9 @@ void SetValueImpl(const Context& dev_ctx,
   auto out_e = EigenTensor<T, RANK>::From(*out);
   auto value_e = EigenTensor<T, RANK>::From(expand_tensor);
 
-  auto starts_indices = Eigen::DSizes<Eigen::DenseIndex, RANK>();
-  auto ends_indices = Eigen::DSizes<Eigen::DenseIndex, RANK>();
-  auto strides_indices = Eigen::DSizes<Eigen::DenseIndex, RANK>();
+  auto starts_indices = Eigen::DSizes<int64_t, RANK>();
+  auto ends_indices = Eigen::DSizes<int64_t, RANK>();
+  auto strides_indices = Eigen::DSizes<int64_t, RANK>();
 
   for (size_t i = 0; i < RANK; ++i) {
     starts_indices[i] = 0;
@@ -210,14 +209,13 @@ void SetValueKernel(const Context& dev_ctx,
   }
   if (is_full_set_one_value && std::is_same<T, float>::value) {
     dev_ctx.template Alloc<T>(out);
-    phi::funcs::set_constant(
-        dev_ctx, out, static_cast<float>(assign_values[0]));
+    funcs::set_constant(dev_ctx, out, static_cast<float>(assign_values[0]));
     return;
   }
 
   DenseTensor value_tensor = Empty<T>(dev_ctx, shape);
-  phi::TensorFromVector(assign_values, dev_ctx, &value_tensor);
-  value_tensor.Resize(common::make_ddim(shape));
+  TensorFromVector(assign_values, dev_ctx, &value_tensor);
+  value_tensor.Resize(shape);
 
   SetTensorValueKernel<T, Context>(dev_ctx,
                                    x,

@@ -35,12 +35,12 @@ void CScatterOpCUDAKernel(const Context& dev_ctx,
 #if defined(PADDLE_WITH_NCCL) || defined(PADDLE_WITH_RCCL)
   auto x = &input;
   int64_t numel = x->numel();
-  ncclDataType_t dtype = phi::ToNCCLDataType(x->dtype());
+  ncclDataType_t dtype = ToNCCLDataType(x->dtype());
 
   int root_id = root;
   auto place = dev_ctx.GetPlace();
   gpuStream_t stream = nullptr;
-  phi::distributed::NCCLCommContext* comm_ctx = nullptr;
+  distributed::NCCLCommContext* comm_ctx = nullptr;
   PADDLE_ENFORCE_GE(
       root_id,
       0,
@@ -53,7 +53,7 @@ void CScatterOpCUDAKernel(const Context& dev_ctx,
           "The ring_id (%d) for c_scatter_op must be non-negative.", ring_id));
 
   comm_ctx =
-      static_cast<phi::distributed::NCCLCommContext*>(dev_ctx.GetCommContext());
+      static_cast<distributed::NCCLCommContext*>(dev_ctx.GetCommContext());
   PADDLE_ENFORCE_NE(comm_ctx,
                     nullptr,
                     common::errors::Unavailable(
@@ -75,19 +75,19 @@ void CScatterOpCUDAKernel(const Context& dev_ctx,
     stream = dev_ctx.stream();
   }
 
-  phi::DDim x_dims = x->dims();
-  phi::DDim out_dims(x_dims);
-  phi::DenseTensor temp;
+  DDim x_dims = x->dims();
+  DDim out_dims(x_dims);
+  DenseTensor temp;
   temp.Resize(out_dims);
   auto out_ptr = dev_ctx.template Alloc<T>(&temp);
 
   if (root_id == comm_ctx->GetRank()) {
-    comm_ctx->Broadcast(const_cast<phi::DenseTensor*>(x), *x, root_id, stream);
-    phi::Copy(dev_ctx,
-              *static_cast<const phi::DenseTensor*>(x),
-              place,
-              false,
-              static_cast<phi::DenseTensor*>(&temp));
+    comm_ctx->Broadcast(const_cast<DenseTensor*>(x), *x, root_id, stream);
+    Copy(dev_ctx,
+         *static_cast<const DenseTensor*>(x),
+         place,
+         false,
+         static_cast<DenseTensor*>(&temp));
   } else {
     comm_ctx->Broadcast(&temp, temp, root_id, stream);
   }
@@ -99,11 +99,11 @@ void CScatterOpCUDAKernel(const Context& dev_ctx,
   temp.Resize(out_dims);
   out->Resize(out_dims);
   dev_ctx.template Alloc<T>(out);
-  phi::Copy(dev_ctx,
-            *static_cast<const phi::DenseTensor*>(&temp),
-            place,
-            true,
-            static_cast<phi::DenseTensor*>(out));
+  Copy(dev_ctx,
+       *static_cast<const DenseTensor*>(&temp),
+       place,
+       true,
+       static_cast<DenseTensor*>(out));
   out->Resize(out_dims);
 #else
   PADDLE_ENFORCE_EQ(

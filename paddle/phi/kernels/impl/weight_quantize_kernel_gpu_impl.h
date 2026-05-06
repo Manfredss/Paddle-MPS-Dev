@@ -172,11 +172,11 @@ void weight_permute_gpu_impl(const GPUContext& dev_ctx,
   auto total_k = shape[0];
   auto total_n = shape[1];
   auto numel = total_k * total_n;
-  auto gpu_config = phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, numel, 1);
+  auto gpu_config = backends::gpu::GetGpuLaunchConfig1D(dev_ctx, numel, 1);
   int grid_size = gpu_config.GetGridSize();
   int block_size = gpu_config.GetBlockSize();
-  if ((arch == 90) || (arch == 89) || (arch == 86) || (arch == 80) ||
-      (arch == 75)) {
+  if ((arch == 100) || (arch == 90) || (arch == 89) || (arch == 86) ||
+      (arch == 80) || (arch == 75)) {
     if (algo == "weight_only_int4") {
       numel /= 2;
       weight_permute_kernel_wint4<IndexT><<<grid_size, block_size>>>(
@@ -227,7 +227,7 @@ __global__ void per_channel_quant_gpu(const T* weight_data,
         reinterpret_cast<const int4*>(weight_data);
     int2* vec_quanted_weight_data =
         reinterpret_cast<int2*>(quanted_weight_data);
-    phi::AlignedVector<float, VectorSize> abs_max;
+    AlignedVector<float, VectorSize> abs_max;
 #pragma unroll
     for (int i = 0; i < VectorSize; ++i) {
       abs_max[i] = static_cast<float>(0.0f);
@@ -235,14 +235,14 @@ __global__ void per_channel_quant_gpu(const T* weight_data,
 #pragma unroll
     for (int k = 0; k < total_k; ++k) {
       int64_t linear_index = k * total_vec_n + n;
-      phi::AlignedVector<T, VectorSize> weight;
+      AlignedVector<T, VectorSize> weight;
       *reinterpret_cast<int4*>(&weight) = vec_weight_data_ptr[linear_index];
 #pragma unroll
       for (int i = 0; i < VectorSize; ++i) {
         abs_max[i] = fmaxf((abs_max[i]), fabsf((weight[i])));
       }
     }
-    phi::AlignedVector<ScaleT, VectorSize> scale;
+    AlignedVector<ScaleT, VectorSize> scale;
 #pragma unroll
     for (int i = 0; i < VectorSize; ++i) {
       scale[i] = static_cast<ScaleT>(abs_max[i] / static_cast<float>(127.0f));
@@ -251,9 +251,9 @@ __global__ void per_channel_quant_gpu(const T* weight_data,
         *reinterpret_cast<float4*>(&scale);
 
     for (int k = 0; k < total_k; ++k) {
-      phi::AlignedVector<int8_t, VectorSize> quanted_weight;
+      AlignedVector<int8_t, VectorSize> quanted_weight;
       int64_t linear_index = k * total_vec_n + n;
-      phi::AlignedVector<T, VectorSize> weight;
+      AlignedVector<T, VectorSize> weight;
       *reinterpret_cast<int4*>(&weight) =
           *reinterpret_cast<const int4*>(vec_weight_data_ptr + linear_index);
 #pragma unroll
@@ -282,7 +282,7 @@ __global__ void per_channel_quant_gpu_int4_row_pack(const T* weight_data,
     const int4* vec_weight_data_ptr =
         reinterpret_cast<const int4*>(weight_data);
     int* vec_quanted_weight_data = reinterpret_cast<int*>(quanted_weight_data);
-    phi::AlignedVector<float, VectorSize> abs_max;
+    AlignedVector<float, VectorSize> abs_max;
 #pragma unroll
     for (int i = 0; i < VectorSize; ++i) {
       abs_max[i] = static_cast<float>(0.0f);
@@ -290,14 +290,14 @@ __global__ void per_channel_quant_gpu_int4_row_pack(const T* weight_data,
 #pragma unroll
     for (int k = 0; k < total_k; ++k) {
       int64_t linear_index = k * total_vec_n + n;
-      phi::AlignedVector<T, VectorSize> weight;
+      AlignedVector<T, VectorSize> weight;
       *reinterpret_cast<int4*>(&weight) = vec_weight_data_ptr[linear_index];
 #pragma unroll
       for (int i = 0; i < VectorSize; ++i) {
         abs_max[i] = fmaxf((abs_max[i]), fabsf((weight[i])));
       }
     }
-    phi::AlignedVector<ScaleT, VectorSize> scale;
+    AlignedVector<ScaleT, VectorSize> scale;
 #pragma unroll
     for (int i = 0; i < VectorSize; ++i) {
       scale[i] = static_cast<ScaleT>(abs_max[i] / static_cast<float>(7.0f));
@@ -306,8 +306,8 @@ __global__ void per_channel_quant_gpu_int4_row_pack(const T* weight_data,
         *reinterpret_cast<float4*>(&scale);
     for (int k = 0; k < total_k; ++k) {
       int64_t linear_index = k * total_vec_n + n;
-      phi::AlignedVector<T, VectorSize> weight;
-      phi::AlignedVector<int8_t, VectorSize / 2> quanted_weight;
+      AlignedVector<T, VectorSize> weight;
+      AlignedVector<int8_t, VectorSize / 2> quanted_weight;
       *reinterpret_cast<int4*>(&weight) =
           *reinterpret_cast<const int4*>(vec_weight_data_ptr + linear_index);
 #pragma unroll
@@ -347,7 +347,7 @@ __global__ void per_channel_quant_gpu_int4_col_pack(const T* weight_data,
         reinterpret_cast<const int4*>(weight_data);
     int2* vec_quanted_weight_data =
         reinterpret_cast<int2*>(quanted_weight_data);
-    phi::AlignedVector<float, VectorSize> abs_max;
+    AlignedVector<float, VectorSize> abs_max;
 #pragma unroll
     for (int i = 0; i < VectorSize; ++i) {
       abs_max[i] = static_cast<float>(0.0f);
@@ -355,14 +355,14 @@ __global__ void per_channel_quant_gpu_int4_col_pack(const T* weight_data,
 #pragma unroll
     for (int k = 0; k < total_k; ++k) {
       int64_t linear_index = k * total_vec_n + n;
-      phi::AlignedVector<T, VectorSize> weight;
+      AlignedVector<T, VectorSize> weight;
       *reinterpret_cast<int4*>(&weight) = vec_weight_data_ptr[linear_index];
 #pragma unroll
       for (int i = 0; i < VectorSize; ++i) {
         abs_max[i] = fmaxf((abs_max[i]), static_cast<float>(fabsf(weight[i])));
       }
     }
-    phi::AlignedVector<ScaleT, VectorSize> scale;
+    AlignedVector<ScaleT, VectorSize> scale;
 #pragma unroll
     for (int i = 0; i < VectorSize; ++i) {
       scale[i] = static_cast<ScaleT>(abs_max[i] / static_cast<float>(7.0f));
@@ -371,10 +371,10 @@ __global__ void per_channel_quant_gpu_int4_col_pack(const T* weight_data,
         *reinterpret_cast<float4*>(&scale);
 
     for (int k = 0; k < total_k / 2; ++k) {
-      phi::AlignedVector<int8_t, VectorSize> quanted_weight;
+      AlignedVector<int8_t, VectorSize> quanted_weight;
       for (int packed_idx = 0; packed_idx < 2; ++packed_idx) {
         int64_t linear_index = (k * 2 + packed_idx) * total_vec_n + n;
-        phi::AlignedVector<T, VectorSize> weight;
+        AlignedVector<T, VectorSize> weight;
         *reinterpret_cast<int4*>(&weight) =
             *reinterpret_cast<const int4*>(vec_weight_data_ptr + linear_index);
 #pragma unroll
@@ -426,8 +426,8 @@ void weight_quant_gpu(const GPUContext& dev_ctx,
         <<<kGridSize, kBlockSize>>>(
             weight_data, quanted_weight_data, scale_data, total_k, vec_total_n);
 #else
-    if ((arch == 90) || (arch == 89) || (arch == 86) || (arch == 80) ||
-        (arch == 75)) {
+    if ((arch == 100) || (arch == 90) || (arch == 89) || (arch == 86) ||
+        (arch == 80) || (arch == 75)) {
       per_channel_quant_gpu_int4_col_pack<T, kVectorSize>
           <<<kGridSize, kBlockSize>>>(weight_data,
                                       quanted_weight_data,
@@ -513,7 +513,7 @@ void weight_permute_gpu_w4a8(const GPUContext& dev_ctx,
   auto original_n = shape[1];
   auto original_numel = original_k * original_n;
   auto gpu_config =
-      phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, original_numel, 1);
+      backends::gpu::GetGpuLaunchConfig1D(dev_ctx, original_numel, 1);
   int grid_size = gpu_config.GetGridSize();
   VLOG(2) << "weight_permute_gpu: original_k = " << original_k
           << "original_n = " << original_n << "grid size = " << grid_size;
@@ -591,7 +591,7 @@ void weight_permute_gpu_w4afp8(const GPUContext& dev_ctx,
   auto original_n = shape[1];
   auto original_numel = original_k * original_n;
   auto gpu_config =
-      phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, original_numel, 1);
+      backends::gpu::GetGpuLaunchConfig1D(dev_ctx, original_numel, 1);
   int grid_size = gpu_config.GetGridSize();
   VLOG(2) << "weight_permute_gpu: original_k = " << original_k
           << "original_n = " << original_n << "grid size = " << grid_size;

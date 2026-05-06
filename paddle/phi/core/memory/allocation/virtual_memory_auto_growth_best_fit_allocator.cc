@@ -13,17 +13,16 @@
 // limitations under the License.
 
 #include "paddle/phi/core/memory/allocation/virtual_memory_auto_growth_best_fit_allocator.h"
-
 #include <algorithm>
 #include <mutex>
+#include "glog/logging.h"
 #include "paddle/common/flags.h"
-
 #include "paddle/phi/core/memory/allocation/aligned_allocator.h"
 #include "paddle/phi/core/memory/allocation/cuda_virtual_mem_allocator.h"
 
 PHI_DEFINE_EXPORTED_uint64(
     vmm_small_pool_size_in_mb,
-    0,
+    1,
     "Threshold (MiB) separating the small and large pools. "
     "0 disables the small pool and enables single-pool mode "
     "(all requests go to the large pool). When > 0, requests "
@@ -116,7 +115,7 @@ VirtualMemoryAutoGrowthBestFitAllocator::
     VirtualMemoryAutoGrowthBestFitAllocator(
         const std::shared_ptr<Allocator> &underlying_allocator,
         size_t alignment,
-        const phi::GPUPlace &place)
+        const GPUPlace &place)
     : underlying_allocator_(
           std::make_shared<AlignedAllocator>(underlying_allocator, alignment)),
       alignment_(alignment),
@@ -142,7 +141,14 @@ phi::Allocation *VirtualMemoryAutoGrowthBestFitAllocator::AllocateImpl(
 void VirtualMemoryAutoGrowthBestFitAllocator::FreeImpl(
     phi::Allocation *allocation) {
   std::lock_guard<SpinLock> guard(spinlock_);
-  auto block_it = static_cast<BlockAllocation *>(allocation)->block_it_;
+  void *ptr = allocation->ptr();
+  auto block_it = FindBlockByPtr(ptr);
+  if (block_it == all_blocks_.end()) {
+    VLOG(4) << "[VMM][FreeImplMissingBlock] ptr=" << ptr
+            << " allocation_size=" << allocation->size();
+    delete allocation;
+    return;
+  }
   TryMergeBlock2Blocks(block_it);
   delete allocation;
 }
@@ -159,6 +165,14 @@ bool VirtualMemoryAutoGrowthBestFitAllocator::CollectTensorParts(
     }
   }
   return false;
+}
+
+std::list<Block>::iterator
+VirtualMemoryAutoGrowthBestFitAllocator::FindBlockByPtr(void *ptr) {
+  for (auto it = all_blocks_.begin(); it != all_blocks_.end(); ++it) {
+    if (it->ptr_ == ptr) return it;
+  }
+  return all_blocks_.end();
 }
 
 void VirtualMemoryAutoGrowthBestFitAllocator::TryMergeBlock2Blocks(
@@ -257,12 +271,12 @@ VirtualMemoryAutoGrowthBestFitAllocator::AllocateOrCompact(size_t size) {
       if (free_block->is_free_) {
         assert(free_block->size_ < size);
         auto remain_size = size - free_block->size_;
-        VLOG(1) << " Tail free block size {" << free_block->size_
+        VLOG(4) << " Tail free block size {" << free_block->size_
                 << "} is smaller than allocate size {" << size
                 << "} after compact, re-alloc {" << remain_size << "}";
         allocateptr = std::move(underlying_allocator_->Allocate(remain_size));
       } else {
-        VLOG(1) << "Tail block is not free, just allocate {" << size << "}";
+        VLOG(4) << "Tail block is not free, just allocate {" << size << "}";
         allocateptr = std::move(underlying_allocator_->Allocate(size));
       }
     }
@@ -415,7 +429,7 @@ phi::Allocation *VirtualMemoryAutoGrowthBestFitAllocator::AllocFromFreeBlocks(
 }
 
 size_t VirtualMemoryAutoGrowthBestFitAllocator::CompactImpl(
-    const phi::Place &place) {
+    const Place &place) {
   VLOG(1) << "Do Memory Compact Manual";
   size_t compact_free_size = memory_compactor_->Compact(
       all_blocks_, all_blocks_.front().ptr_, all_blocks_.back().ptr_);
@@ -534,7 +548,7 @@ void VirtualMemoryAutoGrowthBestFitAllocator::PreAllocate(size_t size) {
 bool VirtualMemoryAutoGrowthBestFitMultiScalePoolAllocator::IsSmallRequest(
     size_t size) {
   auto small_pool_size = FLAGS_vmm_small_pool_size_in_mb << 20;
-  return size <= small_pool_size;
+  return size < small_pool_size;
 }
 
 void VirtualMemoryAutoGrowthBestFitMultiScalePoolAllocator::PreAlloc() {
@@ -548,7 +562,7 @@ void VirtualMemoryAutoGrowthBestFitMultiScalePoolAllocator::PreAlloc() {
   auto vmm_small_pool_pre_alloc = FLAGS_vmm_small_pool_pre_alloc_in_mb << 20;
   auto vmm_large_pool_pre_alloc = FLAGS_vmm_large_pool_pre_alloc_in_mb << 20;
 
-  if (vmm_small_pool_pre_alloc > 0) {
+  if (vmm_small_pool_pre_alloc > 0 && small_allocator) {
     VLOG(4) << "Begin Small Pool PreAllocate in "
                "VirtualMemoryAutoGrowthBestFitMultiScalePoolAllocator size "
             << vmm_small_pool_pre_alloc;
@@ -557,7 +571,7 @@ void VirtualMemoryAutoGrowthBestFitMultiScalePoolAllocator::PreAlloc() {
                "VirtualMemoryAutoGrowthBestFitMultiScalePoolAllocator size "
             << vmm_small_pool_pre_alloc;
   }
-  if (vmm_large_pool_pre_alloc > 0) {
+  if (vmm_large_pool_pre_alloc > 0 && large_allocator) {
     VLOG(4) << "Begin Large Pool PreAllocate in "
                "VirtualMemoryAutoGrowthBestFitMultiScalePoolAllocator size "
             << vmm_large_pool_pre_alloc;
@@ -569,7 +583,7 @@ void VirtualMemoryAutoGrowthBestFitMultiScalePoolAllocator::PreAlloc() {
 }
 
 size_t VirtualMemoryAutoGrowthBestFitMultiScalePoolAllocator::CompactImpl(
-    const phi::Place &place) {
+    const Place &place) {
   auto large_allocator =
       std::dynamic_pointer_cast<VirtualMemoryAutoGrowthBestFitAllocator>(
           GetLargeAllocator());
@@ -577,6 +591,7 @@ size_t VirtualMemoryAutoGrowthBestFitMultiScalePoolAllocator::CompactImpl(
   size_t compact_free_size = large_allocator->Compact(place);
   VLOG(1) << "Memory Compact Large Pool Manual Finish Compact size: "
           << compact_free_size;
+  compact_size_.emplace_back(compact_free_size);
   return compact_free_size;
 }
 

@@ -44,7 +44,7 @@ template <typename T, size_t N>
 __global__ void ContiguousCaseZeroFunc(
     const T* input_data,
     T* out_data,
-    Array<int64_t, phi::DDim::kMaxRank + 1> input_stride) {
+    Array<int64_t, DDim::kMaxRank + 1> input_stride) {
   int64_t input_offset = 0;
   int64_t grid_idx = static_cast<int64_t>(blockIdx.z) * gridDim.y * gridDim.x +
                      static_cast<int64_t>(blockIdx.y) * gridDim.x + blockIdx.x;
@@ -76,7 +76,7 @@ template <typename T, size_t N>
 __global__ void ContiguousCaseOneFunc(
     const T* input_data,
     T* out_data,
-    Array<int64_t, phi::DDim::kMaxRank + 1> input_stride,
+    Array<int64_t, DDim::kMaxRank + 1> input_stride,
     Array<int64_t, 6> dims,
     const int64_t x_max) {
   int64_t x = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
@@ -87,7 +87,7 @@ __global__ void ContiguousCaseOneFunc(
 
     int64_t reg_dims[6] = {
         dims[0], dims[1], dims[2], dims[3], dims[4], dims[5]};
-    int64_t coordinate[phi::DDim::kMaxRank + 1];
+    int64_t coordinate[DDim::kMaxRank + 1];
 
     switch (N) {
       case 1:
@@ -167,8 +167,8 @@ __global__ void ContiguousCaseOneFunc(
 template <typename T, size_t N>
 __global__ void ContiguousDefaultFunc(
     const T* input_data,
-    phi::Array<int64_t, phi::DDim::kMaxRank + 1> input_stride,
-    phi::Array<int64_t, phi::DDim::kMaxRank + 1> dims,
+    Array<int64_t, DDim::kMaxRank + 1> input_stride,
+    Array<int64_t, DDim::kMaxRank + 1> dims,
     const int64_t numel,
     T* out_data) {
   CUDA_KERNEL_LOOP_TYPE(i, numel, int64_t) {
@@ -230,11 +230,11 @@ bool is_only_transposed(const DDim& shape,
 }
 
 template <typename T, typename Context>
-bool LaunchContiguousCazeZeroKernel(
+bool LaunchContiguousCaseZeroKernel(
     const Context& dev_ctx,
     const T* input_data,
-    const phi::Array<int64_t, phi::DDim::kMaxRank + 1>& input_stride,
-    const phi::Array<int64_t, phi::DDim::kMaxRank + 1>& input_dims,
+    const Array<int64_t, DDim::kMaxRank + 1>& input_stride,
+    const Array<int64_t, DDim::kMaxRank + 1>& input_dims,
     int rank,
     T* output_data) {
   if (rank > 6) {
@@ -302,16 +302,16 @@ bool LaunchContiguousCazeZeroKernel(
 }
 
 template <typename T, typename Context>
-bool LaunchContiguousCazeOneKernel(
+bool LaunchContiguousCaseOneKernel(
     const Context& dev_ctx,
     const T* input_data,
-    const phi::Array<int64_t, phi::DDim::kMaxRank + 1>& input_stride,
-    const phi::Array<int64_t, phi::DDim::kMaxRank + 1>& input_dims,
+    const Array<int64_t, DDim::kMaxRank + 1>& input_stride,
+    const Array<int64_t, DDim::kMaxRank + 1>& input_dims,
     int rank,
     int64_t numel,
     T* output_data) {
   Dim3 grid(1, 1, 1), block(1, 1, 1);
-  phi::Array<int64_t, 6> cur_input_dims;
+  Array<int64_t, 6> cur_input_dims;
   block.x = 512;
 
   if (rank >= 1) {
@@ -445,8 +445,8 @@ template <typename T, typename Context>
 void LaunchContiguousDefaultKernel(
     const Context& dev_ctx,
     const T* input_data,
-    const phi::Array<int64_t, phi::DDim::kMaxRank + 1>& input_stride,
-    const phi::Array<int64_t, phi::DDim::kMaxRank + 1>& input_dims,
+    const Array<int64_t, DDim::kMaxRank + 1>& input_stride,
+    const Array<int64_t, DDim::kMaxRank + 1>& input_dims,
     int rank,
     int64_t numel,
     T* output_data) {
@@ -500,7 +500,7 @@ template <typename T, typename Context>
 void ContiguousKernel(const Context& dev_ctx,
                       const DenseTensor& input,
                       DenseTensor* out) {
-  phi::DenseTensorMeta meta = input.meta();
+  DenseTensorMeta meta = input.meta();
   std::vector<int> axis;
   DDim src_stride = meta.strides;
   DDim src_shape = meta.dims;
@@ -509,7 +509,7 @@ void ContiguousKernel(const Context& dev_ctx,
     meta.strides = meta.calc_strides(meta.dims);
     out->set_meta(meta);
     DenseTensor tmp_tensor = input;
-    phi::DenseTensorMeta tmp_meta = meta;
+    DenseTensorMeta tmp_meta = meta;
     tmp_meta.strides = src_stride;
     tmp_meta.dims = src_shape;
     tmp_tensor.set_meta(tmp_meta);
@@ -530,8 +530,8 @@ void ContiguousKernel(const Context& dev_ctx,
     return;
   }
 
-  Array<int64_t, phi::DDim::kMaxRank + 1> input_stride;
-  Array<int64_t, phi::DDim::kMaxRank + 1> input_dims;
+  Array<int64_t, DDim::kMaxRank + 1> input_stride;
+  Array<int64_t, DDim::kMaxRank + 1> input_dims;
   for (int i = 0; i < input.dims().size(); i++) {
     input_dims[i] = input.dims()[i];
     input_stride[i] = input.strides()[i];
@@ -543,9 +543,9 @@ void ContiguousKernel(const Context& dev_ctx,
     input_stride[0] = 1;
   }
 
-  if (LaunchContiguousCazeZeroKernel<T, Context>(
+  if (LaunchContiguousCaseZeroKernel<T, Context>(
           dev_ctx, input_data, input_stride, input_dims, rank, output_data)) {
-  } else if (LaunchContiguousCazeOneKernel<T, Context>(dev_ctx,
+  } else if (LaunchContiguousCaseOneKernel<T, Context>(dev_ctx,
                                                        input_data,
                                                        input_stride,
                                                        input_dims,

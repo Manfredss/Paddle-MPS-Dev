@@ -31,14 +31,12 @@ limitations under the License. */
 
 namespace phi {
 
-namespace scatter = phi::funcs::scatter;
+namespace scatter = funcs::scatter;
 
 template <typename T, bool IsMultiPrecision>
 struct LambMomentREGUpdateFunctor {
-  using MT =
-      typename std::conditional<IsMultiPrecision,
-                                typename phi::dtype::MPTypeTrait<T>::Type,
-                                T>::type;
+  using MT = typename std::
+      conditional<IsMultiPrecision, typename MPTypeTrait<T>::Type, T>::type;
 
   MT weight_decay_;
   MT beta1_;
@@ -113,10 +111,8 @@ struct LambMomentREGUpdateFunctor {
 
 template <typename T, bool IsMultiPrecision>
 struct LambMomentMENUpdateFunctor {
-  using MT =
-      typename std::conditional<IsMultiPrecision,
-                                typename phi::dtype::MPTypeTrait<T>::Type,
-                                T>::type;
+  using MT = typename std::
+      conditional<IsMultiPrecision, typename MPTypeTrait<T>::Type, T>::type;
 
   MT weight_decay_;
   MT beta1_;
@@ -268,7 +264,7 @@ struct SparseLambMomentREGUpdateFunctor {
   inline HOSTDEVICE void operator()(size_t i) const {
     if (skip_update_ && *skip_update_) return;
     auto row_idx =
-        phi::funcs::BinarySearch<int64_t>(rows_, row_count_, i / row_numel_);
+        funcs::BinarySearch<int64_t>(rows_, row_count_, i / row_numel_);
     T g = row_idx >= 0 ? grad_[row_idx * row_numel_ + i % row_numel_]
                        : static_cast<T>(0);
     update(i, g);
@@ -357,7 +353,7 @@ struct SparseLambMomentMENUpdateFunctor {
   inline HOSTDEVICE void operator()(size_t i) const {
     if (skip_update_ && *skip_update_) return;
     auto row_idx =
-        phi::funcs::BinarySearch<int64_t>(rows_, row_count_, i / row_numel_);
+        funcs::BinarySearch<int64_t>(rows_, row_count_, i / row_numel_);
     T g = row_idx >= 0 ? grad_[row_idx * row_numel_ + i % row_numel_]
                        : static_cast<T>(0);
     update(i, g);

@@ -27,7 +27,7 @@ void SoftmaxKernel(const Context& dev_ctx,
                    DenseTensor* out) {
   using XPUType = typename XPUTypeTrait<T>::Type;
   const int rank = x.dims().size();
-  const int calc_axis = phi::funcs::CanonicalAxis(axis, rank);
+  const int calc_axis = funcs::CanonicalAxis(axis, rank);
 
   // allocate memory on device.
   dev_ctx.template Alloc<T>(out);
@@ -37,7 +37,7 @@ void SoftmaxKernel(const Context& dev_ctx,
   }
   // For 0D Tensor
   if (rank == 0) {
-    phi::funcs::set_constant(dev_ctx, out, static_cast<T>(1.0));
+    funcs::set_constant(dev_ctx, out, static_cast<T>(1.0));
     return;
   }
 
@@ -48,8 +48,8 @@ void SoftmaxKernel(const Context& dev_ctx,
 
   int r = 0;
   auto version =
-      phi::backends::xpu::get_xpu_version(dev_ctx.GetPlace().GetDeviceId());
-  if (version == phi::backends::xpu::XPUVersion::XPU1) {
+      backends::xpu::get_xpu_version(dev_ctx.GetPlace().GetDeviceId());
+  if (version == backends::xpu::XPUVersion::XPU1) {
     xpu::ctx_guard RAII_GUARD(dev_ctx.x_context());
     XPUType* clip_x_data_l3 = RAII_GUARD.alloc_l3_or_gm<XPUType>(x.numel());
     r = xpu::clamp(dev_ctx.x_context(),

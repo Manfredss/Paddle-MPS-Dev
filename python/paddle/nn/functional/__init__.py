@@ -46,6 +46,7 @@ from .activation import (
     softplus,
     softshrink,
     softsign,
+    swiglu,
     swish,
     tanh,
     tanh_,
@@ -92,6 +93,7 @@ from .flash_attention import (
     flash_attn_qkvpacked,
     flash_attn_varlen_qkvpacked,
     flashmask_attention,
+    flashmask_get_unique_id,
     sdp_kernel,  # noqa: F401
 )
 from .input import (
@@ -140,6 +142,7 @@ from .norm import (
     layer_norm,
     local_response_norm,
     normalize,
+    rms_norm,
 )
 from .pooling import (
     adaptive_avg_pool1d,
@@ -173,6 +176,9 @@ from .vision import (
 )
 
 logsigmoid = log_sigmoid
+conv_transpose1d = conv1d_transpose
+conv_transpose2d = conv2d_transpose
+conv_transpose3d = conv3d_transpose
 __all__ = [
     'celu',
     'conv1d',
@@ -181,6 +187,9 @@ __all__ = [
     'conv2d_transpose',
     'conv3d',
     'conv3d_transpose',
+    'conv_transpose1d',
+    'conv_transpose2d',
+    'conv_transpose3d',
     'pairwise_distance',
     'elu',
     'elu_',
@@ -207,6 +216,7 @@ __all__ = [
     'softsign',
     'sigmoid',
     'silu',
+    'swiglu',
     'swish',
     'mish',
     'tanh',
@@ -289,6 +299,7 @@ __all__ = [
     'temporal_shift',
     'batch_norm',
     'layer_norm',
+    'rms_norm',
     'instance_norm',
     'class_center_sample',
     'sparse_attention',
@@ -304,6 +315,7 @@ __all__ = [
     'gaussian_nll_loss',
     'scaled_dot_product_attention',
     'flashmask_attention',
+    'flashmask_get_unique_id',
     'flash_attn_qkvpacked',
     "flash_attention_v3_varlen",
     'flash_attn_varlen_qkvpacked',

@@ -258,10 +258,10 @@ void lu_decomposed_kernel(const Context& dev_ctx,
   int lwork;
   cusolver_bufferSize(cusolverH, m, n, d_A, lda, &lwork);
 
-  auto work_buff = phi::memory_utils::Alloc(
-      dev_ctx.GetPlace(),
-      lwork * sizeof(T),
-      phi::Stream(reinterpret_cast<phi::StreamId>(dev_ctx.stream())));
+  auto work_buff =
+      memory_utils::Alloc(dev_ctx.GetPlace(),
+                          lwork * sizeof(T),
+                          Stream(reinterpret_cast<StreamId>(dev_ctx.stream())));
   T* d_work = reinterpret_cast<T*>(work_buff->ptr());
 
   /* step 3: LU factorization */
@@ -288,18 +288,9 @@ void LUKernel(const Context& dev_ctx,
       ::common::errors::PreconditionNotMet(
           "Invalid input x dimensionality: %d (expected ≥2)", x.dims().size()));
   if (x.numel() == 0) {
-    phi::Full<int, Context>(dev_ctx,
-                            phi::IntArray(common::vectorize(infos->dims())),
-                            static_cast<int>(0),
-                            infos);
-    phi::Full<int, Context>(dev_ctx,
-                            phi::IntArray(common::vectorize(pivots->dims())),
-                            static_cast<int>(0),
-                            pivots);
-    phi::Full<T, Context>(dev_ctx,
-                          phi::IntArray(common::vectorize(out->dims())),
-                          static_cast<T>(0),
-                          out);
+    Full<int, Context>(dev_ctx, infos->dims(), static_cast<int>(0), infos);
+    Full<int, Context>(dev_ctx, pivots->dims(), static_cast<int>(0), pivots);
+    Full<T, Context>(dev_ctx, out->dims(), static_cast<T>(0), out);
     return;
   }
   int64_t largest_matrix = (1LL << 31) - 1;
@@ -324,14 +315,14 @@ void LUKernel(const Context& dev_ctx,
   int n = static_cast<int>(outdims[outrank - 2]);
   int lda = std::max(1, m);
   if (pivot) {
-    auto ipiv_dims = common::slice_ddim(outdims, 0, outrank - 1);
+    auto ipiv_dims = slice_ddim(outdims, 0, outrank - 1);
     ipiv_dims[outrank - 2] = std::min(m, n);
     pivots->Resize(ipiv_dims);
   }
   dev_ctx.template Alloc<int>(pivots);
   auto ipiv_data = pivots->data<int>();
 
-  auto info_dims = common::slice_ddim(outdims, 0, outrank - 2);
+  auto info_dims = slice_ddim(outdims, 0, outrank - 2);
   infos->Resize(info_dims);
   dev_ctx.template Alloc<int>(infos);
   auto info_data = infos->data<int>();

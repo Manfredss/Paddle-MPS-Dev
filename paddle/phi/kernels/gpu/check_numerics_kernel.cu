@@ -15,6 +15,7 @@ limitations under the License. */
 #include "paddle/phi/kernels/check_numerics_kernel.h"
 
 #include "glog/logging.h"
+#include "paddle/phi/backends/gpu/cuda/cuda_graph_with_memory_pool.h"
 #include "paddle/phi/backends/gpu/gpu_context.h"
 #include "paddle/phi/common/amp_type_traits.h"
 #include "paddle/phi/common/memory_utils.h"
@@ -27,11 +28,9 @@ namespace phi {
 static std::once_flag init_multi_gpu_op_var_map_flag;
 
 // lazy init
-static std::vector<
-    std::unordered_map<std::string, phi::Allocator::AllocationPtr>>&
+static std::vector<std::unordered_map<std::string, Allocator::AllocationPtr>>&
 multi_op_var2gpu_str() {
-  static std::vector<
-      std::unordered_map<std::string, phi::Allocator::AllocationPtr>>
+  static std::vector<std::unordered_map<std::string, Allocator::AllocationPtr>>
       _multi_op_var2gpu_str;
   return _multi_op_var2gpu_str;
 }
@@ -42,14 +41,14 @@ static std::vector<std::mutex>& multi_op_var2gpu_str_mutex() {
 }
 
 static void InitMultiGPUOpVarMap() {
-  int dev_count = phi::backends::gpu::GetGPUDeviceCount();
+  int dev_count = backends::gpu::GetGPUDeviceCount();
   PADDLE_ENFORCE_GT(dev_count,
                     0,
                     common::errors::NotFound(
                         "cuda device must > 0, now dev_count=%d", dev_count));
 
   // https://stackoverflow.com/questions/16465633/how-can-i-use-something-like-stdvectorstdmutex
-  std::vector<std::unordered_map<std::string, phi::Allocator::AllocationPtr>>
+  std::vector<std::unordered_map<std::string, Allocator::AllocationPtr>>
       tmp_multi(dev_count);
   std::vector<std::mutex> tmp_multi_mutex(dev_count);
 
@@ -110,8 +109,8 @@ __device__ void BlockReduceNumNanInfAndWrite(const int64_t num_nan,
 }
 
 template <typename T,
-          std::enable_if_t<std::is_same<T, phi::complex64>::value ||
-                               std::is_same<T, phi::complex128>::value,
+          std::enable_if_t<std::is_same<T, complex64>::value ||
+                               std::is_same<T, complex128>::value,
                            bool> = true>
 __device__ void BlockReduceMaxMinAndWrite(const T max_value,
                                           const T min_value,
@@ -124,8 +123,8 @@ __device__ void BlockReduceMaxMinAndWrite(const T max_value,
 }
 
 template <typename T,
-          std::enable_if_t<!std::is_same<T, phi::complex64>::value &&
-                               !std::is_same<T, phi::complex128>::value,
+          std::enable_if_t<!std::is_same<T, complex64>::value &&
+                               !std::is_same<T, complex128>::value,
                            bool> = true>
 __device__ void BlockReduceMaxMinAndWrite(const T max_value,
                                           const T min_value,
@@ -137,9 +136,9 @@ __device__ void BlockReduceMaxMinAndWrite(const T max_value,
   if (max_ptr && min_ptr && mean_ptr) {
     __syncthreads();
 
-    T block_max_value = phi::funcs::BlockReduceMax<T>(max_value, FINAL_MASK);
-    T block_min_value = phi::funcs::BlockReduceMin<T>(min_value, FINAL_MASK);
-    T block_mean_value = phi::funcs::BlockReduceSum<T>(mean_value, FINAL_MASK);
+    T block_max_value = funcs::BlockReduceMax<T>(max_value, FINAL_MASK);
+    T block_min_value = funcs::BlockReduceMin<T>(min_value, FINAL_MASK);
+    T block_mean_value = funcs::BlockReduceSum<T>(mean_value, FINAL_MASK);
 
     if (threadIdx.x == 0) {
       max_ptr[offset] = block_max_value;
@@ -246,35 +245,35 @@ __global__ void FindGlobalMaxMinAndPrint(const int64_t* block_num_nan_ptr,
         min_value = tmp_min_value < min_value ? tmp_min_value : min_value;
         mean_value += tmp_mean_value;
       }
-      phi::funcs::SaveStatsAndValues<MT>(num_nan,
+      funcs::SaveStatsAndValues<MT>(num_nan,
+                                    num_inf,
+                                    num_zero,
+                                    max_value,
+                                    min_value,
+                                    mean_value,
+                                    stats_ptr,
+                                    values_ptr);
+    }
+
+    funcs::PrintForDifferentLevel<T, MT>(debug_info,
+                                         numel,
+                                         num_nan,
                                          num_inf,
                                          num_zero,
                                          max_value,
                                          min_value,
                                          mean_value,
-                                         stats_ptr,
-                                         values_ptr);
-    }
-
-    phi::funcs::PrintForDifferentLevel<T, MT>(debug_info,
-                                              numel,
-                                              num_nan,
-                                              num_inf,
-                                              num_zero,
-                                              max_value,
-                                              min_value,
-                                              mean_value,
-                                              check_nan_inf_level);
+                                         check_nan_inf_level);
   }
 }
 
 template <typename T>
 inline std::string GetHintString(const std::string& op_type,
                                  const std::string& var_name,
-                                 const phi::Place& place,
+                                 const Place& place,
                                  int dev_id = -1) {
   std::string op_var =
-      phi::funcs::GetCpuHintString<T>(op_type, var_name, place, dev_id);
+      funcs::GetCpuHintString<T>(op_type, var_name, place, dev_id);
   PADDLE_ENFORCE_EQ(
       (dev_id >= 0 && dev_id < multi_op_var2gpu_str_mutex().size()),
       true,
@@ -284,7 +283,7 @@ inline std::string GetHintString(const std::string& op_type,
 }
 
 template <typename T>
-static char* GetGpuHintStringPtr(const phi::GPUContext& dev_ctx,
+static char* GetGpuHintStringPtr(const GPUContext& dev_ctx,
                                  const std::string& op_type,
                                  const std::string& var_name,
                                  int dev_id) {
@@ -300,10 +299,10 @@ static char* GetGpuHintStringPtr(const phi::GPUContext& dev_ctx,
 
     std::lock_guard<std::mutex> guard(op_var2gpu_str_mutex);
     if (op_var2gpu_str.find(op_var) == op_var2gpu_str.end()) {  // insert
-      auto gpu_str_tensor = phi::memory_utils::Alloc(
+      auto gpu_str_tensor = memory_utils::Alloc(
           dev_ctx.GetPlace(),
           op_var.length() + 1,
-          phi::Stream(reinterpret_cast<phi::StreamId>(dev_ctx.stream())));
+          Stream(reinterpret_cast<StreamId>(dev_ctx.stream())));
       gpu_str_ptr = reinterpret_cast<char*>(gpu_str_tensor->ptr());
 
       op_var2gpu_str.emplace(op_var, std::move(gpu_str_tensor));
@@ -323,8 +322,11 @@ static char* GetGpuHintStringPtr(const phi::GPUContext& dev_ctx,
                                                 hipMemcpyHostToDevice,
                                                 dev_ctx.stream()));
 #else
+      const char* stable_str =
+          backends::gpu::RestoreHostMemIfCapturingCUDAGraph(
+              const_cast<char*>(iter->first.c_str()), op_var.length() + 1);
       PADDLE_ENFORCE_GPU_SUCCESS(cudaMemcpyAsync(gpu_str_ptr,
-                                                 iter->first.c_str(),
+                                                 stable_str,
                                                  op_var.length() + 1,
                                                  cudaMemcpyHostToDevice,
                                                  dev_ctx.stream()));
@@ -344,33 +346,32 @@ static char* GetGpuHintStringPtr(const phi::GPUContext& dev_ctx,
 }
 
 template <typename T>
-static void PrintStack(const phi::GPUContext& dev_ctx,
+static void PrintStack(const GPUContext& dev_ctx,
                        const DenseTensor& stats,
                        const std::string& op_type,
                        const std::string& var_name,
                        int dev_id) {
-  auto cpu_stats =
-      phi::memory_utils::Alloc(phi::CPUPlace(), sizeof(int64_t) * 3);
+  auto cpu_stats = memory_utils::Alloc(CPUPlace(), sizeof(int64_t) * 3);
   int64_t* cpu_stats_ptr = reinterpret_cast<int64_t*>(cpu_stats->ptr());
-  phi::memory_utils::Copy(phi::CPUPlace(),
-                          cpu_stats_ptr,
-                          stats.place(),
-                          stats.data(),
-                          3 * sizeof(int64_t),
-                          dev_ctx.stream());
+  memory_utils::Copy(CPUPlace(),
+                     cpu_stats_ptr,
+                     stats.place(),
+                     stats.data(),
+                     3 * sizeof(int64_t),
+                     dev_ctx.stream());
   dev_ctx.Wait();
   if (cpu_stats_ptr[0] > 0 || cpu_stats_ptr[1] > 0) {
     const std::string debug_info =
         GetHintString<T>(op_type, var_name, stats.place(), dev_id);
-    phi::funcs::PrintAndThrowError(debug_info.c_str(),
-                                   cpu_stats_ptr[0],
-                                   cpu_stats_ptr[1],
-                                   cpu_stats_ptr[2]);
+    funcs::PrintAndThrowError(debug_info.c_str(),
+                              cpu_stats_ptr[0],
+                              cpu_stats_ptr[1],
+                              cpu_stats_ptr[2]);
   }
 }
 
 template <typename T, typename MT>
-static void WriteToOutputDir(const phi::GPUContext& dev_ctx,
+static void WriteToOutputDir(const GPUContext& dev_ctx,
                              const DenseTensor& tensor,
                              const DenseTensor& stats,
                              const DenseTensor& values,
@@ -379,13 +380,13 @@ static void WriteToOutputDir(const phi::GPUContext& dev_ctx,
                              const std::string& output_dir,
                              const int check_nan_inf_level) {
   // Copy stats and values from GPU to CPU.
-  phi::DenseTensor cpu_stats;
+  DenseTensor cpu_stats;
   cpu_stats.Resize({static_cast<int64_t>(3)});
-  phi::Copy(dev_ctx, stats, phi::CPUPlace(), false, &cpu_stats);
+  Copy(dev_ctx, stats, CPUPlace(), false, &cpu_stats);
 
-  phi::DenseTensor cpu_values;
+  DenseTensor cpu_values;
   cpu_values.Resize({static_cast<int64_t>(3)});
-  phi::Copy(dev_ctx, values, phi::CPUPlace(), false, &cpu_values);
+  Copy(dev_ctx, values, CPUPlace(), false, &cpu_values);
   dev_ctx.Wait();
 
   int dev_id = tensor.place().device;
@@ -394,17 +395,17 @@ static void WriteToOutputDir(const phi::GPUContext& dev_ctx,
   std::string log_name = "gpu." + std::to_string(dev_id);
   int64_t* cpu_stats_ptr = cpu_stats.data<int64_t>();
   float* cpu_values_ptr = cpu_values.data<float>();
-  phi::funcs::WriteToFileForDifferentLevel<T, MT>(debug_info.c_str(),
-                                                  tensor.numel(),
-                                                  cpu_stats_ptr[0],
-                                                  cpu_stats_ptr[1],
-                                                  cpu_stats_ptr[2],
-                                                  cpu_values_ptr[0],
-                                                  cpu_values_ptr[1],
-                                                  cpu_values_ptr[2],
-                                                  check_nan_inf_level,
-                                                  log_name,
-                                                  output_dir);
+  funcs::WriteToFileForDifferentLevel<T, MT>(debug_info.c_str(),
+                                             tensor.numel(),
+                                             cpu_stats_ptr[0],
+                                             cpu_stats_ptr[1],
+                                             cpu_stats_ptr[2],
+                                             cpu_values_ptr[0],
+                                             cpu_values_ptr[1],
+                                             cpu_values_ptr[2],
+                                             check_nan_inf_level,
+                                             log_name,
+                                             output_dir);
 }
 
 template <typename T, typename Context>
@@ -434,18 +435,18 @@ void CheckNumericsKernel(const Context& dev_ctx,
       std::min(static_cast<size_t>(128),
                static_cast<size_t>((tensor.numel() + threads - 1) / threads));
 
-  using MT = typename phi::dtype::MPTypeTrait<T>::Type;
+  using MT = typename MPTypeTrait<T>::Type;
 
   int64_t numel_max_min = blocks;
 
-  phi::DenseTensor block_num_nan_inf_zero;
+  DenseTensor block_num_nan_inf_zero;
   block_num_nan_inf_zero.Resize({static_cast<int64_t>(3 * numel_max_min)});
   int64_t* block_num_nan_ptr =
       dev_ctx.template Alloc<int64_t>(&block_num_nan_inf_zero);
   int64_t* block_num_inf_ptr = block_num_nan_ptr + numel_max_min;
   int64_t* block_num_zero_ptr = block_num_inf_ptr + numel_max_min;
 
-  phi::DenseTensor tensor_block_max_min;
+  DenseTensor tensor_block_max_min;
   tensor_block_max_min.Resize({static_cast<int64_t>(3 * numel_max_min)});
   MT* tensor_block_max_ptr = dev_ctx.template Alloc<MT>(&tensor_block_max_min);
   MT* tensor_block_min_ptr = tensor_block_max_ptr + numel_max_min;
@@ -502,12 +503,12 @@ void CheckNumericsKernel(const Context& dev_ctx,
 #ifdef _WIN32
 INSTANTIATE_CHECKNUMBERICS_KERNEL(float, GPUContext)
 INSTANTIATE_CHECKNUMBERICS_KERNEL(double, GPUContext)
-INSTANTIATE_CHECKNUMBERICS_KERNEL(phi::float16, GPUContext)
-INSTANTIATE_CHECKNUMBERICS_KERNEL(phi::bfloat16, GPUContext)
-INSTANTIATE_CHECKNUMBERICS_KERNEL(phi::complex64, GPUContext)
-INSTANTIATE_CHECKNUMBERICS_KERNEL(phi::complex128, GPUContext)
-INSTANTIATE_CHECKNUMBERICS_KERNEL(phi::float8_e4m3fn, GPUContext)
-INSTANTIATE_CHECKNUMBERICS_KERNEL(phi::float8_e5m2, GPUContext)
+INSTANTIATE_CHECKNUMBERICS_KERNEL(float16, GPUContext)
+INSTANTIATE_CHECKNUMBERICS_KERNEL(bfloat16, GPUContext)
+INSTANTIATE_CHECKNUMBERICS_KERNEL(complex64, GPUContext)
+INSTANTIATE_CHECKNUMBERICS_KERNEL(complex128, GPUContext)
+INSTANTIATE_CHECKNUMBERICS_KERNEL(float8_e4m3fn, GPUContext)
+INSTANTIATE_CHECKNUMBERICS_KERNEL(float8_e5m2, GPUContext)
 #endif
 }  // namespace phi
 

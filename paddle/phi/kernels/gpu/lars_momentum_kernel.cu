@@ -32,7 +32,7 @@
 namespace phi {
 
 template <typename T>
-using MultiPrecisionType = typename phi::dtype::MPTypeTrait<T>::Type;
+using MultiPrecisionType = typename MPTypeTrait<T>::Type;
 
 __device__ __forceinline__ float Sqrt(float x) { return sqrtf(x); }
 __device__ __forceinline__ double Sqrt(double x) { return sqrt(x); }
@@ -94,8 +94,8 @@ __device__ inline void VectorizeLarsUpdate(const T* __restrict__ grad,
                                            const int grid_stride,
                                            const int64_t numel,
                                            MT* master_param_out = nullptr) {
-  using VecType = phi::AlignedVector<T, VecSize>;
-  using VecMType = phi::AlignedVector<MT, VecSize>;
+  using VecType = AlignedVector<T, VecSize>;
+  using VecMType = AlignedVector<MT, VecSize>;
   int main = numel >> (VecSize >> 1);
   int tail_offset = main * VecSize;
 
@@ -186,8 +186,8 @@ __global__ void L2NormKernel(
     g_tmp += (tmp1 * tmp1);
     tid += grid_stride;
   }
-  p_tmp = phi::funcs::BlockReduceSum<MT>(p_tmp, FINAL_MASK);
-  g_tmp = phi::funcs::BlockReduceSum<MT>(g_tmp, FINAL_MASK);
+  p_tmp = funcs::BlockReduceSum<MT>(p_tmp, FINAL_MASK);
+  g_tmp = funcs::BlockReduceSum<MT>(g_tmp, FINAL_MASK);
 
   if (threadIdx.x == 0) {
     p_buffer[blockIdx.x] = p_tmp;
@@ -197,8 +197,8 @@ __global__ void L2NormKernel(
   cg->sync();  // Grid sync for writing partial result to global memory
   MT p_part_sum = threadIdx.x < gridDim.x ? p_buffer[threadIdx.x] : 0;
   MT g_part_sum = threadIdx.x < gridDim.x ? g_buffer[threadIdx.x] : 0;
-  MT tmp0 = phi::funcs::BlockReduceSum<MT>(p_part_sum, FINAL_MASK);
-  MT tmp1 = phi::funcs::BlockReduceSum<MT>(g_part_sum, FINAL_MASK);
+  MT tmp0 = funcs::BlockReduceSum<MT>(p_part_sum, FINAL_MASK);
+  MT tmp1 = funcs::BlockReduceSum<MT>(g_part_sum, FINAL_MASK);
   if (threadIdx.x == 0) {
     s_buffer[0] = tmp0;
     s_buffer[1] = tmp1;
@@ -395,10 +395,9 @@ __global__ void MomentumLarsKernel(const T* param,
   MT param_part_norm = threadIdx.x < thresh ? p_buffer[threadIdx.x] : 0;
   MT grad_part_norm = threadIdx.x < thresh ? g_buffer[threadIdx.x] : 0;
   __syncthreads();
-  MT param_norm =
-      Sqrt(phi::funcs::BlockReduceSum<MT>(param_part_norm, FINAL_MASK));
-  MT grad_norm = Sqrt(rescale_grad_pow * phi::funcs::BlockReduceSum<MT>(
-                                             grad_part_norm, FINAL_MASK));
+  MT param_norm = Sqrt(funcs::BlockReduceSum<MT>(param_part_norm, FINAL_MASK));
+  MT grad_norm = Sqrt(rescale_grad_pow *
+                      funcs::BlockReduceSum<MT>(grad_part_norm, FINAL_MASK));
 #endif
   MomentumUpdate<T, MT>(param,
                         grad,
@@ -484,7 +483,7 @@ void LarsMomentumKernel(
     const std::vector<const DenseTensor*>& velocity,
     const std::vector<const DenseTensor*>& learning_rate,
     const std::vector<const DenseTensor*>& grad,
-    const paddle::optional<std::vector<const DenseTensor*>>& master_param,
+    const optional<std::vector<const DenseTensor*>>& master_param,
     const std::vector<float>& weight_decay_arr,
     float mu,
     float lars_coeff,
@@ -497,10 +496,10 @@ void LarsMomentumKernel(
   using MT = MultiPrecisionType<T>;
   int num_blocks_per_sm = 0;
   int sm_num = dev_ctx.GetSMCount();
-  // phi::DenseTensor tmp_buffer_t = dev_ctx.AllocateTmpTensor<MT,
-  // phi::GPUContext>(
+  // DenseTensor tmp_buffer_t = dev_ctx.AllocateTmpTensor<MT,
+  // GPUContext>(
   //     {LARS_BLOCK_SIZE << 1}, cuda_ctx);
-  phi::DenseTensor tmp_buffer_t;
+  DenseTensor tmp_buffer_t;
   tmp_buffer_t.Resize({LARS_BLOCK_SIZE << 1});
   MT* p_buffer = dev_ctx.template Alloc<MT>(&tmp_buffer_t);
   MT* g_buffer = p_buffer + LARS_BLOCK_SIZE;

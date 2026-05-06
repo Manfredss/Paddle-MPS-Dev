@@ -14,6 +14,7 @@
 
 #include "paddle/phi/kernels/fused_seqpool_cvm_kernel.h"
 #include <string>
+#include "paddle/phi/backends/gpu/cuda/cuda_graph_with_memory_pool.h"
 #include "paddle/phi/backends/gpu/gpu_info.h"
 #include "paddle/phi/backends/gpu/gpu_launch_config.h"
 #include "paddle/phi/common/memory_utils.h"
@@ -101,7 +102,7 @@ __global__ void FusedCVMKernelNoCVM(const size_t N,
 
 template <typename T>
 void FusedSeqpoolCVM(
-    const phi::GPUContext &dev_ctx,  // const paddle::phi::Place &place,
+    const GPUContext &dev_ctx,  // const paddle::phi::Place &place,
     const std::vector<const T *> &input_data,
     const std::vector<T *> &output_data,
     const std::vector<T *> &seqpool_output_data,
@@ -121,65 +122,83 @@ void FusedSeqpoolCVM(
 
 #ifdef PADDLE_WITH_HIP
   T **gpu_input_values = reinterpret_cast<T **>(temp_ptr->ptr());
-  phi::backends::gpu::GpuMemcpyAsync(gpu_input_values,
-                                     input_data.data(),
-                                     input_data.size() * sizeof(T *),
-                                     hipMemcpyHostToDevice,
-                                     stream);
+  backends::gpu::GpuMemcpyAsync(
+      gpu_input_values,
+      backends::gpu::RestoreHostMemIfCapturingCUDAGraph(
+          const_cast<T **>(input_data.data()), input_data.size()),
+      input_data.size() * sizeof(T *),
+      hipMemcpyHostToDevice,
+      stream);
   T **gpu_output_values =
       reinterpret_cast<T **>(&gpu_input_values[input_data.size()]);
-  phi::backends::gpu::GpuMemcpyAsync(gpu_output_values,
-                                     output_data.data(),
-                                     output_data.size() * sizeof(T *),
-                                     hipMemcpyHostToDevice,
-                                     stream);
+  backends::gpu::GpuMemcpyAsync(
+      gpu_output_values,
+      backends::gpu::RestoreHostMemIfCapturingCUDAGraph(
+          const_cast<T **>(output_data.data()), output_data.size()),
+      output_data.size() * sizeof(T *),
+      hipMemcpyHostToDevice,
+      stream);
   T **gpu_seqpool_output_values =
       reinterpret_cast<T **>(&gpu_output_values[output_data.size()]);
-  phi::backends::gpu::GpuMemcpyAsync(gpu_seqpool_output_values,
-                                     seqpool_output_data.data(),
-                                     seqpool_output_data.size() * sizeof(T *),
-                                     hipMemcpyHostToDevice,
-                                     stream);
+  backends::gpu::GpuMemcpyAsync(
+      gpu_seqpool_output_values,
+      backends::gpu::RestoreHostMemIfCapturingCUDAGraph(
+          const_cast<T **>(seqpool_output_data.data()),
+          seqpool_output_data.size()),
+      seqpool_output_data.size() * sizeof(T *),
+      hipMemcpyHostToDevice,
+      stream);
   size_t **lods_values = reinterpret_cast<size_t **>(
       &gpu_seqpool_output_values[seqpool_output_data.size()]);
-  phi::backends::gpu::GpuMemcpyAsync(lods_values,
-                                     lods.data(),
-                                     lods.size() * sizeof(size_t *),
-                                     hipMemcpyHostToDevice,
-                                     stream);
+  backends::gpu::GpuMemcpyAsync(
+      lods_values,
+      backends::gpu::RestoreHostMemIfCapturingCUDAGraph(
+          const_cast<size_t **>(lods.data()), lods.size()),
+      lods.size() * sizeof(size_t *),
+      hipMemcpyHostToDevice,
+      stream);
 #else
   T **gpu_input_values = reinterpret_cast<T **>(temp_ptr->ptr());
-  phi::backends::gpu::GpuMemcpyAsync(gpu_input_values,
-                                     input_data.data(),
-                                     input_data.size() * sizeof(T *),
-                                     cudaMemcpyHostToDevice,
-                                     stream);
+  backends::gpu::GpuMemcpyAsync(
+      gpu_input_values,
+      backends::gpu::RestoreHostMemIfCapturingCUDAGraph(
+          const_cast<T **>(input_data.data()), input_data.size()),
+      input_data.size() * sizeof(T *),
+      cudaMemcpyHostToDevice,
+      stream);
   T **gpu_output_values =
       reinterpret_cast<T **>(&gpu_input_values[input_data.size()]);
-  phi::backends::gpu::GpuMemcpyAsync(gpu_output_values,
-                                     output_data.data(),
-                                     output_data.size() * sizeof(T *),
-                                     cudaMemcpyHostToDevice,
-                                     stream);
+  backends::gpu::GpuMemcpyAsync(
+      gpu_output_values,
+      backends::gpu::RestoreHostMemIfCapturingCUDAGraph(
+          const_cast<T **>(output_data.data()), output_data.size()),
+      output_data.size() * sizeof(T *),
+      cudaMemcpyHostToDevice,
+      stream);
   T **gpu_seqpool_output_values =
       reinterpret_cast<T **>(&gpu_output_values[output_data.size()]);
-  phi::backends::gpu::GpuMemcpyAsync(gpu_seqpool_output_values,
-                                     seqpool_output_data.data(),
-                                     seqpool_output_data.size() * sizeof(T *),
-                                     cudaMemcpyHostToDevice,
-                                     stream);
+  backends::gpu::GpuMemcpyAsync(
+      gpu_seqpool_output_values,
+      backends::gpu::RestoreHostMemIfCapturingCUDAGraph(
+          const_cast<T **>(seqpool_output_data.data()),
+          seqpool_output_data.size()),
+      seqpool_output_data.size() * sizeof(T *),
+      cudaMemcpyHostToDevice,
+      stream);
   size_t **lods_values = reinterpret_cast<size_t **>(
       &gpu_seqpool_output_values[seqpool_output_data.size()]);
-  phi::backends::gpu::GpuMemcpyAsync(lods_values,
-                                     lods.data(),
-                                     lods.size() * sizeof(size_t *),
-                                     cudaMemcpyHostToDevice,
-                                     stream);
+  backends::gpu::GpuMemcpyAsync(
+      lods_values,
+      backends::gpu::RestoreHostMemIfCapturingCUDAGraph(
+          const_cast<size_t **>(lods.data()), lods.size()),
+      lods.size() * sizeof(size_t *),
+      cudaMemcpyHostToDevice,
+      stream);
 #endif
 
   size_t N = static_cast<size_t>(batch_size * slot_num * embedding_size);
-  phi::backends::gpu::GpuLaunchConfig config =
-      phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, N);
+  backends::gpu::GpuLaunchConfig config =
+      backends::gpu::GetGpuLaunchConfig1D(dev_ctx, N);
   // first sum pool
   FusedSeqpoolKernelNormal<<<config.block_per_grid.x,
                              config.thread_per_block.x,
@@ -206,8 +225,8 @@ void FusedSeqpoolCVM(
     // not need show click input
     N = static_cast<size_t>(batch_size * slot_num *
                             (embedding_size - cvm_offset));
-    phi::backends::gpu::GpuLaunchConfig config =
-        phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, N);
+    backends::gpu::GpuLaunchConfig config =
+        backends::gpu::GetGpuLaunchConfig1D(dev_ctx, N);
     FusedCVMKernelNoCVM<<<config.block_per_grid.x,
                           config.thread_per_block.x,
                           0,
@@ -231,7 +250,7 @@ void FusedSeqpoolCVMCUDAKernel(const Context &dev_ctx,
                                std::vector<DenseTensor *> out) {
   // from InferShape
   const size_t num_inputs = x.size();
-  std::vector<phi::DDim> outs_dims;
+  std::vector<DDim> outs_dims;
   outs_dims.resize(num_inputs);
   int batch_size_tmp = -1;
   for (size_t i = 0; i < num_inputs; ++i) {
@@ -263,7 +282,7 @@ void FusedSeqpoolCVMCUDAKernel(const Context &dev_ctx,
     } else {
       out_dim = {batch_size_tmp, dims[rank - 1] - cvm_offset};
     }
-    outs_dims[i] = common::make_ddim(out_dim);
+    outs_dims[i] = make_ddim(out_dim);
   }
   for (size_t i = 0; i < out.size(); ++i) {
     out[i]->Resize(outs_dims[i]);
@@ -276,7 +295,7 @@ void FusedSeqpoolCVMCUDAKernel(const Context &dev_ctx,
   std::vector<const size_t *> lods_data(slot_size);
   std::vector<T *> output_data(slot_size);
 
-  std::vector<phi::DenseTensor> seqpool_outputs(slot_size);
+  std::vector<DenseTensor> seqpool_outputs(slot_size);
   std::vector<T *> seqpool_output_data(slot_size);
 
   auto padding_value = pad_value;

@@ -58,7 +58,7 @@ void SliceCooGradCompute(const Context& dev_ctx,
                          const std::vector<int64_t>& starts,
                          const std::vector<int64_t>& ends,
                          SparseCooTensor* x_grad) {
-  const phi::DDim& x_dims = x.dims();
+  const DDim& x_dims = x.dims();
 
   // copy axes to device
   auto d_axes_tensor = memory_utils::Alloc(
@@ -90,8 +90,8 @@ void SliceCooGradCompute(const Context& dev_ctx,
   const int64_t out_grad_nnz = out_grad.nnz();
   auto sparse_dim = static_cast<int64_t>(out_grad.sparse_dim());
   DenseTensor dx_indices =
-      phi::Empty<int64_t, Context>(dev_ctx, {sparse_dim, out_grad_nnz});
-  DenseTensor dx_values = phi::Empty<T, Context>(dev_ctx, {out_grad_nnz});
+      Empty<int64_t, Context>(dev_ctx, {sparse_dim, out_grad_nnz});
+  DenseTensor dx_values = Empty<T, Context>(dev_ctx, {out_grad_nnz});
   auto* dx_indices_data = dx_indices.data<int64_t>();
   auto* dx_values_data = dx_values.data<T>();
 
@@ -101,7 +101,7 @@ void SliceCooGradCompute(const Context& dev_ctx,
   x_grad->SetMember(dx_indices, dx_values, x.dims(), x.coalesced());
 
   auto config =
-      phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, out_grad_nnz + 1, 1);
+      backends::gpu::GetGpuLaunchConfig1D(dev_ctx, out_grad_nnz + 1, 1);
   GetCooInputGradCudaKernel<T><<<config.block_per_grid.x,
                                  config.thread_per_block.x,
                                  0,
@@ -124,7 +124,7 @@ void SliceCooGradKernel(const Context& dev_ctx,
                         const phi::IntArray& starts,
                         const phi::IntArray& ends,
                         SparseCooTensor* x_grad) {
-  const phi::DDim& x_dims = x.dims();
+  const DDim& x_dims = x.dims();
   std::vector<int64_t> axes_vec = axes.GetData();
   std::vector<int64_t> starts_vec = starts.GetData();
   std::vector<int64_t> ends_vec = ends.GetData();
@@ -188,9 +188,9 @@ void SliceCsrGrad2D(const Context& dev_ctx,
   const auto* out_grad_cols_data = out_grad.cols().data<int64_t>();
   const auto* out_grad_values_data = out_grad.values().data<T>();
 
-  DenseTensor dx_crows = phi::Empty<int64_t>(dev_ctx, {n_rows + 1});
-  DenseTensor dx_cols = phi::Empty<int64_t>(dev_ctx, {out_grad_nnz});
-  DenseTensor dx_values = phi::Empty<T, Context>(dev_ctx, {out_grad_nnz});
+  DenseTensor dx_crows = Empty<int64_t>(dev_ctx, {n_rows + 1});
+  DenseTensor dx_cols = Empty<int64_t>(dev_ctx, {out_grad_nnz});
+  DenseTensor dx_values = Empty<T, Context>(dev_ctx, {out_grad_nnz});
   auto* dx_crows_data = dx_crows.data<int64_t>();
   auto* dx_cols_data = dx_cols.data<int64_t>();
   auto* dx_values_data = dx_values.data<T>();
@@ -198,7 +198,7 @@ void SliceCsrGrad2D(const Context& dev_ctx,
 
   // set cols and values
   auto config =
-      phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, out_grad_nnz + 1, 1);
+      backends::gpu::GetGpuLaunchConfig1D(dev_ctx, out_grad_nnz + 1, 1);
   GetCsrInputColsValuesCudaKernel<T><<<config.block_per_grid.x,
                                        config.thread_per_block.x,
                                        0,
@@ -208,7 +208,7 @@ void SliceCsrGrad2D(const Context& dev_ctx,
                                                            starts[1],
                                                            dx_cols_data,
                                                            dx_values_data);
-  config = phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n_rows + 1, 1);
+  config = backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n_rows + 1, 1);
   GetCsrInputCrowsCudaKernel<<<config.block_per_grid.x,
                                config.thread_per_block.x,
                                0,
@@ -245,9 +245,9 @@ void SliceCsrGrad3D(const Context& dev_ctx,
   const auto* out_grad_cols_data = out_grad.cols().data<int64_t>();
   const auto* out_grad_values_data = out_grad.values().data<T>();
 
-  DenseTensor dx_crows = phi::Empty<int64_t>(dev_ctx, {dim0 * (n_rows + 1)});
-  DenseTensor dx_cols = phi::Empty<int64_t>(dev_ctx, {out_grad_nnz});
-  DenseTensor dx_values = phi::Empty<T, Context>(dev_ctx, {out_grad_nnz});
+  DenseTensor dx_crows = Empty<int64_t>(dev_ctx, {dim0 * (n_rows + 1)});
+  DenseTensor dx_cols = Empty<int64_t>(dev_ctx, {out_grad_nnz});
+  DenseTensor dx_values = Empty<T, Context>(dev_ctx, {out_grad_nnz});
   auto* dx_crows_data = dx_crows.data<int64_t>();
   auto* dx_cols_data = dx_cols.data<int64_t>();
   auto* dx_values_data = dx_values.data<T>();
@@ -255,7 +255,7 @@ void SliceCsrGrad3D(const Context& dev_ctx,
 
   // set cols and values
   auto config =
-      phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, out_grad_nnz + 1, 1);
+      backends::gpu::GetGpuLaunchConfig1D(dev_ctx, out_grad_nnz + 1, 1);
   GetCsrInputColsValuesCudaKernel<T><<<config.block_per_grid.x,
                                        config.thread_per_block.x,
                                        0,
@@ -269,7 +269,7 @@ void SliceCsrGrad3D(const Context& dev_ctx,
   int64_t out_grad_n_rows = out_grad.dims()[1];
   for (int64_t i = 0; i < dim0; ++i) {
     if (i < starts[0] || i >= ends[0]) {
-      config = phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n_rows + 1, 1);
+      config = backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n_rows + 1, 1);
       GetCsrInputCrowsPart1CudaKernel<<<config.block_per_grid.x,
                                         config.thread_per_block.x,
                                         0,
@@ -278,7 +278,7 @@ void SliceCsrGrad3D(const Context& dev_ctx,
     } else {
       int64_t dx_crows_offset = i * (n_rows + 1);
       int64_t out_grad_crows_offset = (i - starts[0]) * (out_grad_n_rows + 1);
-      config = phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n_rows + 1, 1);
+      config = backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n_rows + 1, 1);
       GetCsrInputCrowsCudaKernel<<<config.block_per_grid.x,
                                    config.thread_per_block.x,
                                    0,
@@ -303,7 +303,7 @@ void SliceCsrGradCompute(const Context& dev_ctx,
                          const std::vector<int64_t>& starts,
                          const std::vector<int64_t>& ends,
                          SparseCsrTensor* x_grad) {
-  const phi::DDim& x_dims = x.dims();
+  const DDim& x_dims = x.dims();
 
   // construct new axes, starts, and ends
   std::vector<int64_t> new_axes(3), new_starts(3), new_ends(3);
@@ -334,7 +334,7 @@ void SliceCsrGradKernel(const Context& dev_ctx,
                         const phi::IntArray& starts,
                         const phi::IntArray& ends,
                         SparseCsrTensor* x_grad) {
-  const phi::DDim& x_dims = x.dims();
+  const DDim& x_dims = x.dims();
   std::vector<int64_t> axes_vec = axes.GetData();
   std::vector<int64_t> starts_vec = starts.GetData();
   std::vector<int64_t> ends_vec = ends.GetData();

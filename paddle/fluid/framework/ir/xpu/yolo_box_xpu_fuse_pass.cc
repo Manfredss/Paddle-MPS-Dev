@@ -353,7 +353,7 @@ int YoloBoxXPUFusePass::ApplyImpl(ir::Graph* graph,
     float offset_ = 0.f;
     if (with_left_ew_sub) {
       const auto& left_ew_sub_y_t =
-          scope->FindVar(left_ew_sub_y->Name())->Get<phi::DenseTensor>();
+          scope->FindVar(left_ew_sub_y->Name())->Get<DenseTensor>();
       auto left_ew_sub_y_dims = left_ew_sub_y_t.dims();
       PADDLE_ENFORCE_EQ(left_ew_sub_y_dims.size(),
                         1,
@@ -362,10 +362,10 @@ int YoloBoxXPUFusePass::ApplyImpl(ir::Graph* graph,
                             "must equal 1",
                             left_ew_sub_y_dims.size()));
       auto tensor_type = left_ew_sub_y_t.dtype();
-      if (tensor_type == phi::DataType::FLOAT16) {
-        auto* sub_t_fp16_ptr = left_ew_sub_y_t.data<phi::dtype::float16>();
+      if (tensor_type == DataType::FLOAT16) {
+        auto* sub_t_fp16_ptr = left_ew_sub_y_t.data<phi::float16>();
         offset_ = static_cast<float>(sub_t_fp16_ptr[0]);
-      } else if (tensor_type == phi::DataType::FLOAT32) {
+      } else if (tensor_type == DataType::FLOAT32) {
         auto* sub_t_fp32_ptr = left_ew_sub_y_t.data<float>();
         offset_ = sub_t_fp32_ptr[0];
       } else {

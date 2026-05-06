@@ -17,6 +17,7 @@
 #include "paddle/common/errors.h"
 #include "paddle/phi/core/dense_tensor.h"
 #include "paddle/phi/core/kernel_registry.h"
+#include "paddle/phi/kernels/full_kernel.h"
 #include "paddle/phi/kernels/fusion/cutlass/memory_efficient_attention/autogen/memory_efficient_attention.h"
 #include "paddle/phi/kernels/fusion/cutlass/memory_efficient_attention/gemm_kernel_utils.h"
 #include "paddle/phi/kernels/fusion/cutlass/memory_efficient_attention_utils.h"
@@ -33,11 +34,11 @@ void MemoryEfficientAttentionForwardKernel(
     const DenseTensor& query,
     const DenseTensor& key,
     const DenseTensor& value,
-    const paddle::optional<DenseTensor>& bias,
-    const paddle::optional<DenseTensor>& cu_seqlens_q,
-    const paddle::optional<DenseTensor>& cu_seqlens_k,
-    const paddle::optional<DenseTensor>& causal_diagonal,
-    const paddle::optional<DenseTensor>& seqlen_k,
+    const optional<DenseTensor>& bias,
+    const optional<DenseTensor>& cu_seqlens_q,
+    const optional<DenseTensor>& cu_seqlens_k,
+    const optional<DenseTensor>& causal_diagonal,
+    const optional<DenseTensor>& seqlen_k,
     const Scalar& max_seqlen_q,
     const Scalar& max_seqlen_k,
     const bool causal,
@@ -47,6 +48,31 @@ void MemoryEfficientAttentionForwardKernel(
     DenseTensor* output,
     DenseTensor* logsumexp,
     DenseTensor* seed_and_offset) {
+  Dim<1> seed_dims;
+  seed_dims[0] = 2;
+  seed_and_offset->Resize(seed_dims);
+  dev_ctx.template HostAlloc<int64_t>(seed_and_offset);
+  int64_t* seed_and_offset_ptr =
+      phi::SafeGetTensorPtr<int64_t>(seed_and_offset);
+  auto gen = dev_ctx.GetGenerator();
+  uint64_t inc = query.dims()[0] * query.dims()[2] * 32;
+  auto seed_offset_pair = gen->IncrementOffset(inc);
+  auto seed = (seed_offset_pair.first);
+  auto offset = (seed_offset_pair.second);
+  seed_and_offset_ptr[0] = (int64_t)seed;
+  seed_and_offset_ptr[1] = (int64_t)offset;
+  VLOG(3) << "seed and offset: " << seed << " " << offset << " "
+          << seed_and_offset_ptr;
+
+  if (query.numel() == 0 || key.numel() == 0 || value.numel() == 0) {
+    if (output) {
+      Full<T, Context>(dev_ctx, output->dims(), 0, output);
+    }
+    if (logsumexp) {
+      Full<T, Context>(dev_ctx, logsumexp->dims(), 0, logsumexp);
+    }
+    return;
+  }
   int compute_capacity = dev_ctx.GetComputeCapability();
   const auto max_shmem =
       getMaximumSharedMemoryPerBlockKb(compute_capacity) * 1024;
@@ -114,7 +140,7 @@ void MemoryEfficientAttentionForwardKernel(
     output->Resize({q_dims[0], q_dims[1], q_dims[2], v_dims[3]});
 
     constexpr int64_t kAlignLSE = KernelType::kAlignLSE;
-    phi::Dim<3> logsumexp_dims;
+    Dim<3> logsumexp_dims;
     logsumexp_dims[0] =
         cu_seqlens_q ? cu_seqlens_q.get().dims()[0] - 1 : q_dims[0];
     logsumexp_dims[1] = q_dims[2];
@@ -217,23 +243,6 @@ void MemoryEfficientAttentionForwardKernel(
     VLOG(3) << "bias_strideB " << p.bias_strideB;
     VLOG(3) << "bias_strideH " << p.bias_strideH;
     VLOG(3) << "bias_strideM " << p.bias_strideM;
-
-    phi::Dim<1> seed_dims;
-    seed_dims[0] = 2;
-    seed_and_offset->Resize(seed_dims);
-    dev_ctx.template HostAlloc<int64_t>(seed_and_offset);
-    int64_t* seed_and_offset_ptr =
-        phi::SafeGetTensorPtr<int64_t>(seed_and_offset);
-
-    auto gen = dev_ctx.GetGenerator();
-    uint64_t inc = query.dims()[0] * query.dims()[2] * 32;
-    auto seed_offset_pair = gen->IncrementOffset(inc);
-    auto seed = (seed_offset_pair.first);
-    auto offset = (seed_offset_pair.second);
-    seed_and_offset_ptr[0] = (int64_t)seed;
-    seed_and_offset_ptr[1] = (int64_t)offset;
-    VLOG(3) << "seed and offset: " << seed << " " << offset << " "
-            << seed_and_offset_ptr;
 
     p.use_dropout = use_dropout;
     if (use_dropout) {

@@ -31,8 +31,7 @@ void GatherGradKernel(const Context& dev_ctx,
                       DenseTensor* x_grad) {
   if (out_grad.numel() == 0) {
     if (x_grad) {
-      phi::Full<T, Context>(
-          dev_ctx, phi::IntArray(common::vectorize(x_grad->dims())), 0, x_grad);
+      Full<T, Context>(dev_ctx, x_grad->dims(), 0, x_grad);
     }
     return;
   }
@@ -43,11 +42,11 @@ void GatherGradKernel(const Context& dev_ctx,
   }
 
   if (axis_v != 0) {
-    if (index_type == phi::DataType::INT32) {
-      phi::funcs::GatherV2GradFunction<T, int32_t>(
+    if (index_type == DataType::INT32) {
+      funcs::GatherV2GradFunction<T, int32_t>(
           dev_ctx, &out_grad, &index, axis_v, x_grad);
-    } else if (index_type == phi::DataType::INT64) {
-      phi::funcs::GatherV2GradFunction<T, int64_t>(
+    } else if (index_type == DataType::INT64) {
+      funcs::GatherV2GradFunction<T, int64_t>(
           dev_ctx, &out_grad, &index, axis_v, x_grad);
     }
     return;
@@ -60,10 +59,10 @@ void GatherGradKernel(const Context& dev_ctx,
   dxt.device(place) = dxt.constant(static_cast<T>(0));
   if (x_grad->numel() == 0) return;
 
-  if (index_type == phi::DataType::INT32) {
-    phi::funcs::ScatterAssignAdd<T, int32_t>(dev_ctx, out_grad, index, x_grad);
-  } else if (index_type == phi::DataType::INT64) {
-    phi::funcs::ScatterAssignAdd<T, int64_t>(dev_ctx, out_grad, index, x_grad);
+  if (index_type == DataType::INT32) {
+    funcs::ScatterAssignAdd<T, int32_t>(dev_ctx, out_grad, index, x_grad);
+  } else if (index_type == DataType::INT64) {
+    funcs::ScatterAssignAdd<T, int64_t>(dev_ctx, out_grad, index, x_grad);
   } else {
     PADDLE_THROW(common::errors::InvalidArgument(
         "The data type of Input(Index) of gather_grad must be int32 or int64 "

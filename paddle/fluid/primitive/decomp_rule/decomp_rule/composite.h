@@ -257,6 +257,16 @@ Tensor bmm_decomp(const Tensor& x, const Tensor& y) {
 }
 
 template <typename T>
+Tensor linear_v2_decomp(const Tensor& input,
+                        const Tensor& weight,
+                        const Tensor& bias,
+                        bool transpose_weight) {
+  Tensor result = matmul<T>(input, weight, false, transpose_weight);
+  result = result + bias;
+  return result;
+}
+
+template <typename T>
 std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor, Tensor> batch_norm_decomp(
     const Tensor& x,
     const Tensor& run_mean,
@@ -543,7 +553,7 @@ std::tuple<Tensor, Tensor, Tensor> layer_norm_decomp(
     const Tensor& x,
     const paddle::optional<Tensor>& scale,
     const paddle::optional<Tensor>& bias,
-    float epsilon,
+    double epsilon,
     int begin_norm_axis) {
   std::vector<int64_t> reduce_axis;
   auto org_dtype = x.dtype();
@@ -1408,11 +1418,12 @@ Tensor baddbmm_decomp(const Tensor& input,
                       const Tensor& x,
                       const Tensor& y,
                       const float beta,
-                      const float alpha) {
-  int batch_size = x.shape()[0];
+                      const float alpha,
+                      const DataType out_dtype) {
+  int64_t batch_size = x.shape()[0];
   std::vector<Tensor> batch_results;
 
-  for (int i = 0; i < batch_size; ++i) {
+  for (int64_t i = 0; i < batch_size; ++i) {
     Tensor x_batch = get_slice<T>(x, i);
     Tensor y_batch = get_slice<T>(y, i);
     Tensor result = matmul<T>(x_batch, y_batch);
@@ -1499,7 +1510,7 @@ Tensor diag_decomp(const Tensor& x,
 }
 
 template <typename T>
-std::tuple<Tensor, Tensor, Tensor> rms_norm_decomp(
+std::tuple<Tensor, Tensor, Tensor> fused_rms_norm_quant_decomp(
     const Tensor& x,
     const paddle::optional<Tensor>& bias,
     const paddle::optional<Tensor>& residual,

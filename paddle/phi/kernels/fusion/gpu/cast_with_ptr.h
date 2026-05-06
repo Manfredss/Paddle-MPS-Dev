@@ -27,11 +27,11 @@ struct CastFunctor {
   HOSTDEVICE OutT operator()(InT x) const { return static_cast<OutT>(x); }
 };
 template <typename InT, typename OutT, int VecSize>
-static void VecCastKernel(const phi::GPUContext &dev_ctx,
+static void VecCastKernel(const GPUContext &dev_ctx,
                           const InT *x,
                           OutT *y,
                           size_t n) {
-  auto config = phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n, VecSize);
+  auto config = backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n, VecSize);
   auto block = config.GetGridSize();
   auto thread = config.GetBlockSize();
   auto main_offset = n / (VecSize * thread) * VecSize * thread;
@@ -41,13 +41,13 @@ static void VecCastKernel(const phi::GPUContext &dev_ctx,
   in_arr[0] = reinterpret_cast<const _ptr_ char *>(x);
   Array<_ptr_ OutT *, 1> out_arr;
   out_arr[0] = y;
-  phi::funcs::VectorizedElementwiseKernel<OutT, FunctorT, 1, 1, VecSize>
+  funcs::VectorizedElementwiseKernel<OutT, FunctorT, 1, 1, VecSize>
       <<<block, thread, 0, stream>>>(
           in_arr, out_arr, n, main_offset, VecSize, FunctorT());
 }
 
 template <typename InT, typename OutT>
-static void LaunchCastKernel(const phi::GPUContext &dev_ctx,
+static void LaunchCastKernel(const GPUContext &dev_ctx,
                              const InT *x,
                              OutT *y,
                              size_t n) {

@@ -19,17 +19,10 @@
 
 #if defined(__NVCC__) || defined(__HIPCC__)
 
-#ifdef __NVCC__
-#include "cub/cub.cuh"
-#endif
-#ifdef __HIPCC__
-#include <hipcub/hipcub.hpp>
-namespace cub = hipcub;
-#endif
 #include <limits>
-
 #include "paddle/common/ddim.h"
 #include "paddle/phi/core/utils/data_type.h"
+#include "paddle/phi/kernels/funcs/cub.h"
 #include "paddle/phi/kernels/funcs/math_function.h"
 namespace phi {
 
@@ -87,7 +80,7 @@ __global__ void ArgCUDAKernel(const int64_t height,     // n * h
 }
 
 template <typename T, typename IndType, class Reducer, typename IndexType>
-void ComputeFullArg(const phi::GPUContext& dev_ctx,
+void ComputeFullArg(const GPUContext& dev_ctx,
                     const DenseTensor& input,
                     DenseTensor* indices,
                     const int64_t pre,
@@ -174,10 +167,10 @@ struct VisitDataCudaArgMinMaxFunctor {
 
   template <typename IndType>
   void apply() const {
-    phi::DDim x_dims;
+    DDim x_dims;
     int new_axis = axis;
     if (flatten) {
-      x_dims = common::make_ddim({x.numel()});
+      x_dims = make_ddim({x.numel()});
       // if flatten, the axis just as 0
       new_axis = 0;
     } else {
@@ -191,7 +184,7 @@ struct VisitDataCudaArgMinMaxFunctor {
     // For 0D Tensor
     if (x.dims().size() == 0) {
       dev_ctx.template Alloc<IndType>(out);
-      phi::funcs::set_constant(dev_ctx, out, static_cast<IndType>(0));
+      funcs::set_constant(dev_ctx, out, static_cast<IndType>(0));
       return;
     }
 
@@ -234,12 +227,12 @@ void ArgMinMaxOpCUDAKernel(const Context& dev_ctx,
           "argmin/argmax input numel must > 0, bug got %d", x.numel()));
   if (dtype == DataType::UNDEFINED) {
     phi::VisitDataTypeTiny(
-        phi::DataType::INT64,
+        DataType::INT64,
         VisitDataCudaArgMinMaxFunctor<Context, T, Reducer>(
             dev_ctx, x, axis.to<int64_t>(), keepdims, flatten, out));
     return;
   }
-  phi::VisitDataTypeTiny(
+  VisitDataTypeTiny(
       dtype,
       VisitDataCudaArgMinMaxFunctor<Context, T, Reducer>(
           dev_ctx, x, axis.to<int64_t>(), keepdims, flatten, out));

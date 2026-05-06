@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pathlib
 import sys
 import unittest
 from unittest.mock import MagicMock
@@ -21,6 +22,8 @@ import numpy as np
 import paddle
 from paddle.compat.proxy import create_fake_class, create_fake_function
 
+sys.path.append(str(pathlib.Path(__file__).parent / "fake_modules"))
+
 
 def use_torch_inside_inner_function():
     import torch
@@ -29,11 +32,11 @@ def use_torch_inside_inner_function():
 
 
 class TestTorchProxy(unittest.TestCase):
-    def test_enable_torch_proxy(self):
+    def test_enable_compat(self):
         with self.assertRaises(ModuleNotFoundError):
             import torch
 
-        paddle.compat.enable_torch_proxy()
+        paddle.enable_compat()
         import torch
 
         self.assertIs(torch.sin, paddle.sin)
@@ -112,9 +115,7 @@ class TestTorchProxyLocalEnabledModule(unittest.TestCase):
         with self.assertRaises(ModuleNotFoundError):
             import torch_proxy_local_enabled_module
 
-        paddle.compat.enable_torch_proxy(
-            scope="torch_proxy_local_enabled_module"
-        )
+        paddle.enable_compat(scope="torch_proxy_local_enabled_module")
         with self.assertRaises(ModuleNotFoundError):
             import torch  # noqa: F401
 
@@ -172,6 +173,26 @@ class TestFakeInterface(unittest.TestCase):
 
         fake_gen = FakeGenerator()
         self.assertTrue(hasattr(fake_gen, "manual_seed"))
+
+
+class TestDeviceAsTypeHints(unittest.TestCase):
+    @paddle.compat.use_torch_proxy_guard()
+    def test_device_as_type_hints(self):
+        from typing import Optional
+
+        import torch
+
+        def fn(x: Optional[torch.device]):  # noqa: FA100
+            return x
+
+        self.assertTrue(callable(torch.device))
+        self.assertEqual(fn.__annotations__["x"], Optional[torch.device])
+        cpu_device = torch.device("cpu")
+        self.assertEqual(str(cpu_device), "cpu")
+        self.assertEqual(
+            torch.device.is_compiled_with_xpu(),
+            paddle.device.is_compiled_with_xpu(),
+        )
 
 
 if __name__ == "__main__":

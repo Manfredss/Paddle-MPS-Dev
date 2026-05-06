@@ -25,10 +25,10 @@ void ExponentialKernel(const Context &dev_ctx,
                        const DenseTensor &x,
                        float lambda,
                        DenseTensor *out) {
-  using MT = typename phi::dtype::MPTypeTrait<T>::Type;
-  phi::funcs::uniform_distribution<MT> dist;
-  phi::funcs::exponential_transform<MT> trans(lambda);
-  phi::funcs::distribution_and_transform<T>(dev_ctx, out, dist, trans);
+  using MT = typename MPTypeTrait<T>::Type;
+  funcs::uniform_distribution<MT> dist;
+  funcs::exponential_transform<MT> trans(lambda);
+  funcs::distribution_and_transform<T>(dev_ctx, out, dist, trans);
 }
 
 }  // namespace phi

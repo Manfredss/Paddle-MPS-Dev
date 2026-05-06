@@ -35,15 +35,12 @@ void GatherKernel(const Context& dev_ctx,
     axis_v += static_cast<int>(x.dims().size());
   }
   if (axis_v != 0) {
-    if (index_type == phi::DataType::INT32) {
-      phi::funcs::GatherV2CUDAFunction<T, int32_t>(
-          &x, &index, axis_v, out, dev_ctx);
-    } else if (index_type == phi::DataType::INT64) {
-      phi::funcs::GatherV2CUDAFunction<T, int64_t>(
-          &x, &index, axis_v, out, dev_ctx);
-    } else if (index_type == phi::DataType::INT16) {
-      phi::funcs::GatherV2CUDAFunction<T, int16_t>(
-          &x, &index, axis_v, out, dev_ctx);
+    if (index_type == DataType::INT32) {
+      funcs::GatherV2CUDAFunction<T, int32_t>(&x, &index, axis_v, out, dev_ctx);
+    } else if (index_type == DataType::INT64) {
+      funcs::GatherV2CUDAFunction<T, int64_t>(&x, &index, axis_v, out, dev_ctx);
+    } else if (index_type == DataType::INT16) {
+      funcs::GatherV2CUDAFunction<T, int16_t>(&x, &index, axis_v, out, dev_ctx);
     }
     return;
   }
@@ -51,12 +48,12 @@ void GatherKernel(const Context& dev_ctx,
   dev_ctx.template Alloc<T>(out);
 
   if (x.numel() == 0) return;
-  if (index_type == phi::DataType::INT32) {
-    phi::funcs::GPUGather<T, int>(dev_ctx, x, index, out);
-  } else if (index_type == phi::DataType::INT64) {
-    phi::funcs::GPUGather<T, int64_t>(dev_ctx, x, index, out);
-  } else if (index_type == phi::DataType::INT16) {
-    phi::funcs::GPUGather<T, int16_t>(dev_ctx, x, index, out);
+  if (index_type == DataType::INT32) {
+    funcs::GPUGather<T, int>(dev_ctx, x, index, out);
+  } else if (index_type == DataType::INT64) {
+    funcs::GPUGather<T, int64_t>(dev_ctx, x, index, out);
+  } else if (index_type == DataType::INT16) {
+    funcs::GPUGather<T, int16_t>(dev_ctx, x, index, out);
   } else {
     PADDLE_THROW(common::errors::InvalidArgument(
         "The data type of Input(Index) of gather "

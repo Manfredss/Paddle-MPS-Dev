@@ -14,14 +14,18 @@
 
 #include "paddle/fluid/eager/backward.h"
 
+#include "paddle/common/flags.h"
 #include "paddle/fluid/eager/general_grad.h"
 #include "paddle/fluid/eager/pylayer/py_layer_node.h"
 #include "paddle/fluid/eager/utils.h"
 #include "paddle/fluid/inference/analysis/dot.h"
 #include "paddle/phi/core/memory/stats.h"
 #include "paddle/phi/kernels/autotune/switch_autotune.h"
+
 COMMON_DECLARE_int32(call_stack_level);
 COMMON_DECLARE_string(dump_grad_node_forward_stack_path);
+COMMON_DECLARE_bool(use_accuracy_compatible_kernel);
+
 namespace egr {
 using paddle::inference::analysis::Dot;
 std::unordered_map<GradNodeBase*, int> getInDegreeMap(
@@ -92,8 +96,8 @@ void ConstructForwardDebugDotGraph(const std::deque<GradNodeBase*>& init_queue,
     }
     visited.insert(node);
     if (need_dump_backward_subgraph &&
-        !egr::EagerBackwardSubGraphNodeRecorder::Instance().ContainsGradNode(
-            node)) {
+        !egr::EagerBackwardSubGraphNodeRecorder::Instance()
+             .IsGradNodeInVizGuard(node)) {
       // if we enable the need_dump_backward_subgraph the gradnode which is not
       // related to subgraph will not be recorded
     } else {
@@ -128,9 +132,9 @@ void ConstructForwardDebugDotGraph(const std::deque<GradNodeBase*>& init_queue,
         // subgraph
         if (need_dump_backward_subgraph &&
             !egr::EagerBackwardSubGraphNodeRecorder::Instance()
-                 .ContainsGradNode(node) &&
+                 .IsGradNodeInVizGuard(node) &&
             !egr::EagerBackwardSubGraphNodeRecorder::Instance()
-                 .ContainsGradNode(next_node)) {
+                 .IsGradNodeInVizGuard(next_node)) {
           queue.push_back(next_node);
           continue;
         }
@@ -147,7 +151,7 @@ void ConstructForwardDebugDotGraph(const std::deque<GradNodeBase*>& init_queue,
           } else {
             if (need_dump_backward_subgraph &&
                 !egr::EagerBackwardSubGraphNodeRecorder::Instance()
-                     .ContainsGradNode(next_node)) {
+                     .IsGradNodeInVizGuard(next_node)) {
               dot->AddNode(dot_next_node_label,
                            paddle::inference::analysis::orange_box_attrs,
                            dot_next_node_label,
@@ -163,10 +167,10 @@ void ConstructForwardDebugDotGraph(const std::deque<GradNodeBase*>& init_queue,
         // if need_dump_backward_subgraph but next_node is in subgraph and node
         // is not in subgraph we will add node in subgraph and add edge
         if (need_dump_backward_subgraph &&
-            egr::EagerBackwardSubGraphNodeRecorder::Instance().ContainsGradNode(
-                next_node) &&
+            egr::EagerBackwardSubGraphNodeRecorder::Instance()
+                .IsGradNodeInVizGuard(next_node) &&
             !egr::EagerBackwardSubGraphNodeRecorder::Instance()
-                 .ContainsGradNode(node)) {
+                 .IsGradNodeInVizGuard(node)) {
           dot_node_label = CreateNodeLabelInDot(node);
           // The node is not in subgraph but the node_next node is in subgraph
           // we use orange_box to mark it too
@@ -244,7 +248,9 @@ std::vector<paddle::Tensor> RunBackward(
 
   // Control variables related to debugging
   bool need_dump_backward_subgraph =
-      egr::EagerBackwardSubGraphNodeRecorder::Instance().HasCapturedSubgraph();
+      egr::EagerBackwardSubGraphNodeRecorder::Instance().NeedDumpBwdSubGraph();
+  bool need_backward_vlog_guard =
+      egr::EagerBackwardSubGraphNodeRecorder::Instance().NeedBwdVlogGuard();
   bool need_debug_backward_graph =
       !dump_backward_graph_path.empty() || need_dump_backward_subgraph;
   //
@@ -278,7 +284,11 @@ std::vector<paddle::Tensor> RunBackward(
   std::unordered_map<GradNodeBase*, std::unique_ptr<GradTensorHolder>>
       node_input_buffers_dict;
   std::unordered_set<GradNodeBase*> visited;
-  for (size_t i = 0; i < tensors.size(); i++) {
+  for (size_t step = 0; step < tensors.size(); step++) {
+    int i = FLAGS_use_accuracy_compatible_kernel
+                ? static_cast<int>(tensors.size()) - 1 - static_cast<int>(step)
+                : static_cast<int>(step);
+
     const paddle::Tensor& tensor = tensors[i];
 
     AutogradMeta* auto_grad_meta = EagerUtils::nullable_autograd_meta(tensor);
@@ -410,7 +420,7 @@ std::vector<paddle::Tensor> RunBackward(
   // Dump the all call stack into
   // FLAGS_dump_grad_node_forward_stack_path
   if (need_dump_forward_stack) {
-    SaveStringToFile(
+    SaveStringToFileWithPID(
         FLAGS_dump_grad_node_forward_stack_path, debug_call_stack, "append");
   }
   std::deque<GradNodeBase*> ready_queue;
@@ -458,6 +468,7 @@ std::vector<paddle::Tensor> RunBackward(
             << " Preparing ";
     try {
       queue.pop_front();
+      egr::LogLevelGuardBackward log_guard(need_backward_vlog_guard, node);
 
       // Construct backward graph for debug
       std::string dot_node_label = "";
@@ -588,9 +599,9 @@ std::vector<paddle::Tensor> RunBackward(
                                              need_dump_backward_subgraph);
             if (need_dump_grad_tensors &&
                 (egr::EagerBackwardSubGraphNodeRecorder::Instance()
-                     .ContainsGradNode(node) ||
+                     .IsGradNodeInVizGuard(node) ||
                  egr::EagerBackwardSubGraphNodeRecorder::Instance()
-                     .ContainsGradNode(next_node))) {
+                     .IsGradNodeInVizGuard(next_node))) {
               debug_grad_tensors_str += egr::FormatTensor(grad_output_tensor);
             }
           }
@@ -644,7 +655,8 @@ std::vector<paddle::Tensor> RunBackward(
                   next_node->name()));
 
           auto add_next_node_func = [&queue](GradNodeBase* next_node) {
-            if (dynamic_cast<egr::GradNodeAccumulation*>(next_node)) {
+            if (dynamic_cast<egr::GradNodeAccumulation*>(next_node) ||
+                FLAGS_use_accuracy_compatible_kernel) {
               queue.push_front(next_node);
             } else {
               queue.push_back(next_node);

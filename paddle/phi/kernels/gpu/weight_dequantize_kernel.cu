@@ -379,10 +379,12 @@ void WeightDequantize(const Context& dev_ctx,
                       DenseTensor* out) {
   using DataType = typename PDDataTypeTraits<T>::DataType;
   int64_t n = scale.dims()[0];
-  // TODO(large-tensor): downstream functors may still use int
 
   int64_t k = x.dims()[1];
-  // TODO(large-tensor): downstream functors may still use int
+  // TODO(large-tensor): CUDA grid dims not support int64
+  PADDLE_ENFORCE_LE_INT_MAX(n, "n");
+  PADDLE_ENFORCE_LE_INT_MAX(k, "k");
+  unsigned int grid_y = static_cast<unsigned int>(n);
 
   PADDLE_ENFORCE_EQ(
       (k % NUMPERTHREAD == 0),
@@ -394,7 +396,7 @@ void WeightDequantize(const Context& dev_ctx,
   unsigned int block_dim_y = 1;
   unsigned int k_iteration =
       k % kperblock == 0 ? k / kperblock : k / kperblock + 1;
-  dim3 grid(1, n / block_dim_y);
+  dim3 grid(1, grid_y / block_dim_y);
   dim3 block(block_dim_x, block_dim_y);
   auto stream = dev_ctx.stream();
 
@@ -450,7 +452,7 @@ void WeightDequantizeKernel(const Context& dev_ctx,
   auto out_dims = out->dims();
   dev_ctx.template Alloc<T>(out);
   WeightDequantize<T, Context>(dev_ctx, x, scale, algo, true, group_size, out);
-  out->Resize({{out_dims[1], out_dims[0]}});
+  out->Resize({out_dims[1], out_dims[0]});
   auto out_tmp = Transpose<T, Context>(dev_ctx, *out, {1, 0});
   out->ShareDataWith(out_tmp);
 #elif defined(PADDLE_WITH_HIP)
@@ -466,7 +468,7 @@ void WeightDequantizeKernel(const Context& dev_ctx,
   dev_ctx.template Alloc<T>(out);
   WeightDequantize<T, Context>(
       dev_ctx, x, group_size > 0 ? scale_trans : scale, algo, group_size, out);
-  out->Resize({{out_dims[1], out_dims[0]}});
+  out->Resize({out_dims[1], out_dims[0]});
   auto out_tmp = Transpose<T, Context>(dev_ctx, *out, {1, 0});
   out->ShareDataWith(out_tmp);
 #else

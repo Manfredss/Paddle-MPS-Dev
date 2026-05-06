@@ -104,6 +104,19 @@ PHI_DEFINE_EXPORTED_int32(
 
 /**
  * Operator related FLAG
+ * Name: FLAGS_check_nan_inf_blacklist
+ * Since Version:
+ * Value Range: string, default=""
+ * Example: FLAGS_check_nan_inf_blacklist="op1,op2,op3"
+ * Note: Blacklist of ops to skip when checking NAN/INF
+ */
+PHI_DEFINE_EXPORTED_string(
+    check_nan_inf_blacklist,
+    "",
+    "Blacklist of ops to skip when checking NAN/INF, split by ','");
+
+/**
+ * Operator related FLAG
  * Name: FLAGS_check_nan_inf
  * Since Version: 0.13.0
  * Value Range: bool, default=false
@@ -231,6 +244,36 @@ PHI_DEFINE_EXPORTED_bool(
     "true, the algorithm is deterministic.");
 
 /**
+ * GPU RNG related FLAG
+ * Name: FLAGS_deterministic_rng
+ * Since Version: 3.4
+ * Value Range: bool, default=false
+ * Example: paddle.set_flags({'FLAGS_deterministic_rng': True})
+ * Note: Fix RNG kernel launch config so same seed gives same results
+ *       across GPU types.
+ */
+PHI_DEFINE_EXPORTED_bool(
+    deterministic_rng,
+    false,
+    "Enable cross-device RNG consistency by fixing GPU kernel launch "
+    "configuration. When true, RNG kernels use a fixed grid/block size "
+    "so that the same seed produces identical results across GPU types.");
+
+/**
+ * GPU RNG related FLAG
+ * Name: FLAGS_deterministic_rng_grid
+ * Since Version: 3.4
+ * Value Range: int32, default=1024
+ * Example: paddle.set_flags({'FLAGS_deterministic_rng_grid': 4096})
+ * Note: Grid size cap used when FLAGS_deterministic_rng is enabled.
+ *       Cross-device consistency requires the same value on all devices.
+ */
+PHI_DEFINE_EXPORTED_int32(
+    deterministic_rng_grid,
+    1024,
+    "Grid size cap when FLAGS_deterministic_rng is enabled.");
+
+/**
  * CUDA related FLAG
  * Name: FLAGS_embedding_deterministic
  * Since Version: 2.5
@@ -280,6 +323,40 @@ PHI_DEFINE_EXPORTED_int64(cudnn_exhaustive_search_times,
                           -1,
                           "Exhaustive search times for cuDNN convolution, "
                           "default is -1, not exhaustive search");
+
+/**
+ * CUDNN related FLAG
+ * Name: FLAGS_cudnn_allow_tf32
+ * Since Version: 3.3.0
+ * Value Range: bool, default=true
+ * Example:
+ * Note: whether to allow using TensorFloat-32 (TF32) in cudnn convolution.
+ * TF32 is only available on Ampere or newer GPUs.
+ * It provides better performance but lower precision than FP32.
+ */
+PHI_DEFINE_EXPORTED_bool(
+    cudnn_allow_tf32,
+    true,
+    "Whether to allow using TensorFloat-32 (TF32) tensor cores for "
+    "convolution operators in cuDNN on Ampere or newer GPUs. "
+    "Default is true.");
+
+/**
+ * CUBLAS related FLAG
+ * Name: FLAGS_cublas_allow_tf32
+ * Since Version: 3.3.0
+ * Value Range: bool, default=false
+ * Example:
+ * Note: whether to allow using TensorFloat-32 (TF32) in cublas matmul.
+ * TF32 is only available on Ampere or newer GPUs.
+ * It provides better performance but lower precision than FP32.
+ */
+PHI_DEFINE_EXPORTED_bool(
+    cublas_allow_tf32,
+    false,
+    "Whether to allow using TensorFloat-32 (TF32) tensor cores for "
+    "matrix multiplication operators in cuBLAS on Ampere or newer GPUs. "
+    "Default is false.");
 
 #ifdef PADDLE_WITH_HIP
 /**
@@ -760,6 +837,18 @@ PHI_DEFINE_EXPORTED_string(
     dump_api_python_stack_path,
     "",
     "Dump api forward python call stack to the dir path");
+/**
+ * Debug related FLAG
+ * Name: dump_api_and_gradnode_python_stack_dir
+ * Since Version: 3.3
+ * Value Range: string, default=""
+ * Example:
+ * Note: Dump api and gradnode forward python call stack to the dir path.
+ */
+PHI_DEFINE_EXPORTED_string(
+    dump_api_and_gradnode_python_stack_dir,
+    "",
+    "Dump api and gradnode forward python call stack to the dir path");
 
 /**
  * Debug related FLAG
@@ -939,6 +1028,20 @@ PHI_DEFINE_EXPORTED_bool(conv2d_disable_cudnn,
 PHI_DEFINE_EXPORTED_bool(use_fast_math,
                          false,
                          "Whether to use fast math GPU functions.");
+#endif
+
+/**
+ * CUDNN related FLAG
+ * Name: conv3d_disable_cudnn
+ * Since Version:
+ * Value Range: bool, default=false
+ * Example:
+ * Note: Disable cudnn in conv3d.
+ */
+#if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
+PHI_DEFINE_EXPORTED_bool(conv3d_disable_cudnn,
+                         false,
+                         "Disable cudnn in conv3d");
 #endif
 
 /**
@@ -1615,11 +1718,11 @@ PHI_DEFINE_EXPORTED_bool(npu_storage_format, false, "");
  * CUDNNv8 related FLAG
  * Name: enable_cudnn_frontend
  * Since Version: 2.5.0
- * Value Range: bool, default=false
+ * Value Range: bool, default=true
  * Example:
  * Note: Enable CUDNNv8 Frontend API for CUDNN kernels.
  */
-PHI_DEFINE_EXPORTED_bool(enable_cudnn_frontend, false, "");
+PHI_DEFINE_EXPORTED_bool(enable_cudnn_frontend, true, "");
 
 /**
  * CUDNNv8 related FLAG
@@ -1838,6 +1941,23 @@ PHI_DEFINE_EXPORTED_int32(
 
 PHI_DEFINE_EXPORTED_bool(print_ir, false, "Whether print ir debug str.");
 
+// Whether to enable CINN kernel cache
+// When enabled, generated files will be saved under:
+// FLAGS_cinn_kernel_cache_save_path/virtual_device_id/HostFuncName__fushionHashKey
+// Files:
+// - cinn_cuda_kernel.fatbin (CUDA kernels)
+// - cinn_cache.so (host modules)
+// This cache can accelerate subsequent CINN compilations
+PHI_DEFINE_EXPORTED_bool(enable_cinn_kernel_cache,
+                         false,
+                         "Whether enable cinn kernel cache.");
+
+// Specify the directory path of generated cinn kernel cache
+PHI_DEFINE_EXPORTED_string(
+    cinn_kernel_cache_save_path,
+    "/tmp/cinn/",
+    "Specify the directory path of generated cinn kernel cache.");
+
 PHI_DEFINE_EXPORTED_bool(
     comp_skip_default_ops,
     true,
@@ -1978,6 +2098,12 @@ PHI_DEFINE_EXPORTED_string(hml_dir,
 PHI_DEFINE_EXPORTED_string(lapack_dir,
                            "",
                            "Specify path for loading liblapack.so.");  // NOLINT
+
+#ifdef PADDLE_WITH_MAGMA
+PHI_DEFINE_EXPORTED_string(magma_dir,
+                           "",
+                           "Specify path for loading libmagma.so.");  // NOLINT
+#endif
 
 /**
  * Apply check infer symbolic pass FLAG
@@ -2332,6 +2458,29 @@ PHI_DEFINE_EXPORTED_bool(
 PHI_DEFINE_EXPORTED_bool(use_accuracy_compatible_kernel,
                          false,
                          "Whether use torch compatible version kernel.");
+/**
+ * Legacy gemm related FLAG
+ * Name: FLAGS_use_legacy_gemm
+ * Since Version: 3.2.2
+ * Value Range: bool, default=false
+ * Example:
+ * Note: Whether use legacy gemm kernel.
+ */
+PHI_DEFINE_EXPORTED_bool(use_legacy_gemm,
+                         false,
+                         "Whether use legacy gemm dispatch logics.");
+
+/**
+ * Legacy gemm related FLAG
+ * Name: FLAGS_use_legacy_linear
+ * Since Version: 3.3.1
+ * Value Range: bool, default=false
+ * Example:
+ * Note: Whether use legacy linear kernel.
+ */
+PHI_DEFINE_EXPORTED_bool(use_legacy_linear,
+                         false,
+                         "Whether use legacy linear dispatch logics.");
 
 /**
  * Allocator Compact related FLAG
@@ -2385,3 +2534,15 @@ PHI_DEFINE_EXPORTED_int64(
 PHI_DEFINE_EXPORTED_bool(try_allocate,
                          false,
                          "whether use try allocate in memory compact.");
+
+/**
+ * Allocator Compact related FLAG
+ * Name: FLAGS_record_alloc_event
+ * Since Version: 3.3
+ * Value Range: bool, default=false
+ * Example:
+ * Note: whether record allocate event.
+ */
+PHI_DEFINE_EXPORTED_bool(record_alloc_event,
+                         false,
+                         "whether record allocate event.");

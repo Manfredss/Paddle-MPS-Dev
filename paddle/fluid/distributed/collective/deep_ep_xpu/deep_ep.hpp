@@ -105,9 +105,7 @@ struct Buffer {
   volatile int* moe_recv_rdma_counter = nullptr;
   int* moe_recv_rdma_counter_mapped = nullptr;
 
-  std::optional<deep_ep::detail::Tensor> last_topk_idx = std::nullopt;
-  std::optional<deep_ep::detail::Tensor> last_topk_weights = std::nullopt;
-  int last_num_experts = 0;
+  std::unique_ptr<DeepEPBuffer> ep_runtime;
 
  public:
   Buffer(int rank,
@@ -281,7 +279,8 @@ struct Buffer {
       int num_experts,
       bool use_fp8,
       bool async,
-      bool return_recv_hook);
+      bool return_recv_hook,
+      int num_per_channel);
 
   std::tuple<deep_ep::detail::Tensor,
              std::optional<EventHandle>,
@@ -452,7 +451,8 @@ struct Buffer {
       int num_experts,
       bool use_fp8,
       bool async,
-      bool return_recv_hook);
+      bool return_recv_hook,
+      int num_per_channel);
 
   std::tuple<paddle::Tensor,
              std::optional<EventHandle>,

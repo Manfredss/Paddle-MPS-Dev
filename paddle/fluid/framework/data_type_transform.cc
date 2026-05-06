@@ -16,10 +16,16 @@ limitations under the License. */
 
 #include "paddle/fluid/framework/convert_utils.h"
 #include "paddle/fluid/framework/selected_rows_utils.h"
+#include "paddle/phi/common/place.h"
 #include "paddle/phi/common/transform.h"
+#include "paddle/phi/kernels/complex_kernel.h"
 
 #if defined(PADDLE_WITH_XPU)
 #include "paddle/phi/core/platform/device/device_wrapper.h"
+#endif
+
+#if defined(PADDLE_WITH_CUSTOM_DEVICE)
+#include "paddle/phi/backends/custom/custom_device_func.h"
 #endif
 
 namespace paddle {
@@ -156,7 +162,7 @@ struct CastDataType {
                phi::DenseTensor* out,
                const phi::DeviceContext* ctx)
       : in_(in), out_(out), ctx_(ctx) {}
-  const phi::DenseTensor in_;
+  const DenseTensor in_;
   phi::DenseTensor* out_;
   const phi::DeviceContext* ctx_;
 
@@ -185,6 +191,18 @@ struct CastDataType {
             CastDataTypeFunctor<InType, OutType>());
       context->Wait();
 #endif
+#if defined(PADDLE_WITH_CUSTOM_DEVICE)
+    } else if (phi::is_custom_place(in_.place())) {
+      auto* context = static_cast<const phi::CustomContext*>(ctx_);
+      auto func = phi::CreateCustomDeviceFunc();
+      func->CustomCastDataType(*context,
+                               static_cast<const void*>(in_begin),
+                               static_cast<void*>(out_begin),
+                               in_.numel(),
+                               in_.dtype(),
+                               out_->dtype());
+      context->Wait();
+#endif
 #if defined(PADDLE_WITH_IPU)
     } else if (phi::is_ipu_place(in_.place())) {
       phi::Transform<phi::CPUContext> trans;
@@ -195,9 +213,24 @@ struct CastDataType {
             out_begin,
             CastDataTypeFunctor<InType, OutType>());
 #endif
+#if defined(PADDLE_WITH_XPU)
+    } else if (phi::is_xpu_place(in_.place())) {
+      if (in_.dtype() == phi::DataType::COMPLEX64 &&
+          out_->dtype() == phi::DataType::FLOAT32) {
+        auto* context = static_cast<const phi::XPUContext*>(ctx_);
+        phi::RealKernel<phi::dtype::complex<float>>(*context, in_, out_);
+      } else {
+        PADDLE_THROW(common::errors::Unimplemented(
+            "Place type is not supported when casting data type from %s to %s.",
+            in_.dtype(),
+            out_->dtype()));
+      }
+#endif
     } else {
       PADDLE_THROW(common::errors::Unimplemented(
-          "Place type is not supported when casting data type."));
+          "Place type is not supported when casting data type from %s to %s.",
+          in_.dtype(),
+          out_->dtype()));
     }
   }
 };

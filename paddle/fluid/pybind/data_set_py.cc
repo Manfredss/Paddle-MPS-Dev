@@ -45,7 +45,7 @@ class IterableDatasetWrapper {
  public:
   IterableDatasetWrapper(framework::Dataset *dataset,
                          const std::vector<std::string> &slots,
-                         const std::vector<phi::Place> &places,
+                         const std::vector<Place> &places,
                          size_t batch_size,
                          bool drop_last)
       : dataset_(dataset),
@@ -80,7 +80,7 @@ class IterableDatasetWrapper {
       tensors_.emplace_back();
       for (auto &var_name : slots_) {
         auto *var = scopes_.back()->Var(var_name);
-        auto *t = var->GetMutable<phi::DenseTensor>();
+        auto *t = var->GetMutable<DenseTensor>();
         tensors_.back().emplace_back(t);
       }
     }
@@ -102,7 +102,7 @@ class IterableDatasetWrapper {
                           "Device number does not match reader number"));
     for (size_t i = 0; i < places_.size(); ++i) {
       data_feeds_[i]->AssignFeedVar(*scopes_[i]);
-      data_feeds_[i]->SetPlace(phi::CPUPlace());
+      data_feeds_[i]->SetPlace(CPUPlace());
       PADDLE_ENFORCE_EQ(data_feeds_[i]->Start(),
                         true,
                         common::errors::Unavailable(
@@ -114,7 +114,7 @@ class IterableDatasetWrapper {
     exhaustive_num_ = 0;
   }
 
-  std::vector<std::unordered_map<std::string, phi::DenseTensor>> Next() {
+  std::vector<std::unordered_map<std::string, DenseTensor>> Next() {
     PADDLE_ENFORCE_EQ(
         is_started_,
         true,
@@ -122,7 +122,7 @@ class IterableDatasetWrapper {
             "Reader must be started when getting next batch data."));
     size_t device_num = places_.size();
 
-    std::vector<std::unordered_map<std::string, phi::DenseTensor>> result(
+    std::vector<std::unordered_map<std::string, DenseTensor>> result(
         device_num);
 
     size_t read_num = 0;
@@ -176,7 +176,7 @@ class IterableDatasetWrapper {
   }
 
  private:
-  bool IsValidDenseTensor(const phi::DenseTensor &tensor) const {
+  bool IsValidDenseTensor(const DenseTensor &tensor) const {
     if (!drop_last_) return true;
     return static_cast<size_t>(tensor.dims()[0]) == batch_size_;
   }
@@ -184,7 +184,7 @@ class IterableDatasetWrapper {
  private:
   framework::Dataset *dataset_;
   std::vector<std::string> slots_;
-  std::vector<phi::Place> places_;
+  std::vector<Place> places_;
   size_t batch_size_;
   bool drop_last_;
 
@@ -193,7 +193,7 @@ class IterableDatasetWrapper {
   size_t exhaustive_num_;
 
   std::vector<std::unique_ptr<framework::Scope>> scopes_;
-  std::vector<std::vector<phi::DenseTensor *>> tensors_;
+  std::vector<std::vector<DenseTensor *>> tensors_;
   bool is_started_{false};
 };
 
@@ -382,7 +382,7 @@ void BindDataset(py::module *m) {
   py::class_<IterableDatasetWrapper>(*m, "IterableDatasetWrapper")
       .def(py::init<framework::Dataset *,
                     const std::vector<std::string> &,
-                    const std::vector<phi::Place> &,
+                    const std::vector<Place> &,
                     size_t,
                     bool>())
       .def("_start", &IterableDatasetWrapper::Start)

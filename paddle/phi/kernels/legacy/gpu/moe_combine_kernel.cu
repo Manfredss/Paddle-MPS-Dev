@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include "paddle/phi/kernels/legacy/gpu/moe_combine_kernel.h"
 #include "paddle/phi/backends/gpu/gpu_context.h"
 #include "paddle/phi/core/dense_tensor.h"
 #include "paddle/phi/core/kernel_registry.h"
@@ -108,8 +109,7 @@ void MoeCombineKernel(const Context& dev_ctx,
                       DenseTensor* y) {
   dev_ctx.template Alloc<T>(y);  // T cannot support phi::dtype::float8 very
                                  // well, maybe replaced with x.dtype();
-  phi::Full<T, Context>(
-      dev_ctx, phi::IntArray(common::vectorize(y->dims())), 0, y);
+  Full<T, Context>(dev_ctx, y->dims(), 0, y);
   auto combine_weights_shape = combine_weights.dims();
   auto x_shape = x.dims();
   moe_combine_fwd<T, Context>(dev_ctx,

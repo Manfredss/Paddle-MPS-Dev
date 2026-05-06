@@ -16,14 +16,9 @@
 
 #ifdef __NVCC__
 #include <curand_kernel.h>
-
-#include "cub/cub.cuh"
 #endif
 #ifdef __HIPCC__
 #include <hiprand_kernel.h>
-
-#include <hipcub/hipcub.hpp>
-namespace cub = hipcub;
 #endif
 
 #include "paddle/common/flags.h"
@@ -32,6 +27,7 @@ namespace cub = hipcub;
 #include "paddle/phi/common/memory_utils.h"
 #include "paddle/phi/core/kernel_registry.h"
 #include "paddle/phi/kernels/empty_kernel.h"
+#include "paddle/phi/kernels/funcs/cub.h"
 #include "paddle/phi/kernels/funcs/for_range.h"
 #include "paddle/phi/kernels/randint_kernel.h"
 
@@ -96,7 +92,7 @@ void RandpermKernel(const Context& dev_ctx,
                               std::numeric_limits<int>::min(),
                               std::numeric_limits<int>::max(),
                               IntArray({n}),
-                              phi::DataType::INT32,
+                              DataType::INT32,
                               &key);
   DenseTensor key_out = Empty<int, Context>(dev_ctx, IntArray({n}));
 
@@ -107,7 +103,7 @@ void RandpermKernel(const Context& dev_ctx,
     range_data[idx] = static_cast<T>(idx);
   });
 
-  out->Resize(common::make_ddim({n}));
+  out->Resize({n});
   T* out_data = dev_ctx.template Alloc<T>(out);
 
   // Refer to [Algorithm of randperm] https://osf.io/af2hy/ to
@@ -129,10 +125,10 @@ void RandpermKernel(const Context& dev_ctx,
                                           end_bit < 32 ? end_bit : 32,
                                           dev_ctx.stream());
 
-  auto d_temp_storage = phi::memory_utils::Alloc(
-      dev_ctx.GetPlace(),
-      temp_storage_bytes,
-      phi::Stream(reinterpret_cast<phi::StreamId>(dev_ctx.stream())));
+  auto d_temp_storage =
+      memory_utils::Alloc(dev_ctx.GetPlace(),
+                          temp_storage_bytes,
+                          Stream(reinterpret_cast<StreamId>(dev_ctx.stream())));
   cub::DeviceRadixSort::SortPairs<int, T>(d_temp_storage->ptr(),
                                           temp_storage_bytes,
                                           key.data<int>(),
@@ -147,7 +143,7 @@ void RandpermKernel(const Context& dev_ctx,
   auto gen_cuda = dev_ctx.GetGenerator();
   auto seed_offset = gen_cuda->IncrementOffset(n);
 
-  auto config = phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n);
+  auto config = backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n);
   SwapRepeatKernel<<<config.block_per_grid.x,
                      config.thread_per_block.x,
                      0,

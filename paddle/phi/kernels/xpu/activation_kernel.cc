@@ -239,7 +239,7 @@ void PowKernel(const Context& dev_ctx,
   const XPUType* x_data = reinterpret_cast<const XPUType*>(x.data<T>());
   XPUType* y_data = reinterpret_cast<XPUType*>(out->data<T>());
   XPUType pow_factor = static_cast<XPUType>(factor.to<T>());
-
+  if (x.numel() == 0) return;
   auto xpu_context = dev_ctx.x_context();
 
   int r = xpu::pow_tensor_scalar(
@@ -439,6 +439,10 @@ void SwishKernel(const Context& dev_ctx,
                  DenseTensor* out) {
   using XPUType = typename XPUTypeTrait<T>::Type;
   dev_ctx.template Alloc<T>(out);
+  if (out->numel() == 0) {
+    return;
+  }
+
   int r = xpu::swish(dev_ctx.x_context(),
                      reinterpret_cast<const XPUType*>(x.data<T>()),
                      reinterpret_cast<XPUType*>(out->data<T>()),
@@ -524,6 +528,19 @@ struct XPUFloorFunctor : public funcs::BaseActivationFunctor<T> {
 };
 
 template <typename T>
+struct XPUCeilFunctor : public funcs::BaseActivationFunctor<T> {
+  using XPUType = typename XPUTypeTrait<T>::Type;
+  template <typename Context>
+  void operator()(const Context& dev_ctx,
+                  const DenseTensor& x,
+                  DenseTensor* out) const {
+    int r = xpu_activation_func<Context, T, XPUType>(
+        dev_ctx, x, out, xpu::ceil<XPUType>);
+    PADDLE_ENFORCE_XDNN_SUCCESS(r, "ceil");
+  }
+};
+
+template <typename T>
 struct XPUSinFunctor : public funcs::BaseActivationFunctor<T> {
   using XPUType = typename XPUTypeTrait<T>::Type;
   template <typename Context>
@@ -590,6 +607,7 @@ struct XPUAcosFunctor : public funcs::BaseActivationFunctor<T> {
 
 DEFINE_XPU_ACTIVATION_KERNEL(Exp, XPUExpFunctor)
 DEFINE_XPU_ACTIVATION_KERNEL(Floor, XPUFloorFunctor)
+DEFINE_XPU_ACTIVATION_KERNEL(Ceil, XPUCeilFunctor)
 DEFINE_XPU_ACTIVATION_KERNEL(Log, XPULogFunctor)
 DEFINE_XPU_ACTIVATION_KERNEL(Reciprocal, XPUReciprocalFunctor)
 DEFINE_XPU_ACTIVATION_KERNEL(Relu, XPUReluFunctor)
@@ -773,5 +791,13 @@ PD_REGISTER_KERNEL(floor,
                    float,
                    int,
                    int64_t,
+                   phi::float16,
+                   phi::bfloat16) {}
+
+PD_REGISTER_KERNEL(ceil,
+                   XPU,
+                   ALL_LAYOUT,
+                   phi::CeilKernel,
+                   float,
                    phi::float16,
                    phi::bfloat16) {}

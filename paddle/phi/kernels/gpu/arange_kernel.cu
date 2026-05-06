@@ -37,15 +37,14 @@ void ArangeTensorKernel(const Context& dev_ctx,
                         const DenseTensor& end,
                         const DenseTensor& step,
                         DenseTensor* out) {
-  using MPType = typename phi::dtype::MPTypeTrait<T>::Type;
-  MPType start_value =
-      static_cast<MPType>(GetValue<T, Context>(dev_ctx, start));
-  MPType end_value = static_cast<MPType>(GetValue<T, Context>(dev_ctx, end));
-  MPType step_value = static_cast<MPType>(GetValue<T, Context>(dev_ctx, step));
+  using MT = typename MPTypeTrait<T>::Type;
+  MT start_value = static_cast<MT>(GetValue<T, Context>(dev_ctx, start));
+  MT end_value = static_cast<MT>(GetValue<T, Context>(dev_ctx, end));
+  MT step_value = static_cast<MT>(GetValue<T, Context>(dev_ctx, step));
 
   int64_t size = 0;
-  phi::funcs::GetSize(start_value, end_value, step_value, &size);
-  out->Resize(common::make_ddim({size}));
+  funcs::GetSize(start_value, end_value, step_value, &size);
+  out->Resize({size});
   T* out_data = dev_ctx.template Alloc<T>(out);
 
   auto stream = dev_ctx.stream();
@@ -54,7 +53,7 @@ void ArangeTensorKernel(const Context& dev_ctx,
     return;
   }
   int64_t grid = (size + block - 1) / block;
-  Range<MPType, T>
+  Range<MT, T>
       <<<grid, block, 0, stream>>>(start_value, step_value, size, out_data);
 }
 
@@ -64,13 +63,13 @@ void ArangeNullaryKernel(const Context& dev_ctx,
                          const T end_value,
                          const T step_value,
                          DenseTensor* out) {
-  using MPType = typename phi::dtype::MPTypeTrait<T>::Type;
-  MPType start_value_mpt = static_cast<MPType>(start_value);
-  MPType end_value_mpt = static_cast<MPType>(end_value);
-  MPType step_value_mpt = static_cast<MPType>(step_value);
+  using MT = typename MPTypeTrait<T>::Type;
+  MT start_value_mpt = static_cast<MT>(start_value);
+  MT end_value_mpt = static_cast<MT>(end_value);
+  MT step_value_mpt = static_cast<MT>(step_value);
   int64_t size = 0;
-  phi::funcs::GetSize(start_value_mpt, end_value_mpt, step_value_mpt, &size);
-  out->Resize(common::make_ddim({size}));
+  funcs::GetSize(start_value_mpt, end_value_mpt, step_value_mpt, &size);
+  out->Resize({size});
   T* out_data = dev_ctx.template Alloc<T>(out);
 
   auto stream = dev_ctx.stream();
@@ -79,7 +78,7 @@ void ArangeNullaryKernel(const Context& dev_ctx,
     return;
   }
   int64_t grid = (size + block - 1) / block;
-  Range<MPType, T><<<grid, block, 0, stream>>>(
+  Range<MT, T><<<grid, block, 0, stream>>>(
       start_value_mpt, step_value_mpt, size, out_data);
 }
 
@@ -96,10 +95,8 @@ void ArangeKernel(const Context& dev_ctx,
       dev_ctx, start_value, end_value, step_value, out);
 }
 
-template decltype(ArangeNullaryKernel<int64_t, phi::GPUContext>)
-    ArangeNullaryKernel;
-template decltype(ArangeNullaryKernel<int, phi::GPUContext>)
-    ArangeNullaryKernel;
+template decltype(ArangeNullaryKernel<int64_t, GPUContext>) ArangeNullaryKernel;
+template decltype(ArangeNullaryKernel<int, GPUContext>) ArangeNullaryKernel;
 }  // namespace phi
 
 PD_REGISTER_KERNEL(arange_tensor,

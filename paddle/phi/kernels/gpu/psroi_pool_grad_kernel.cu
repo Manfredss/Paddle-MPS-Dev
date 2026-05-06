@@ -100,7 +100,7 @@ __global__ void GPUPSROIPoolBackward(const int64_t nthreads,
     for (int ih = hstart; ih < hend; ++ih) {
       for (int iw = wstart; iw < wend; ++iw) {
         int input_index = ih * width + iw;
-        phi::CudaAtomicAdd(offset_dx_data + input_index, diff_val);
+        CudaAtomicAdd(offset_dx_data + input_index, diff_val);
       }
     }
   }
@@ -110,7 +110,7 @@ template <typename T, typename Context>
 void PsroiPoolGradKernel(const Context& dev_ctx,
                          const DenseTensor& x,
                          const DenseTensor& rois,
-                         const paddle::optional<DenseTensor>& rois_num,
+                         const optional<DenseTensor>& rois_num,
                          const DenseTensor& dout,
                          int pooled_height,
                          int pooled_width,
@@ -118,16 +118,12 @@ void PsroiPoolGradKernel(const Context& dev_ctx,
                          float spatial_scale,
                          DenseTensor* dx) {
   int64_t rois_num_t = rois.dims()[0];
-  // TODO(large-tensor): downstream functors may still use int
 
   int64_t input_channels = x.dims()[1];
-  // TODO(large-tensor): downstream functors may still use int
 
   int64_t height = x.dims()[2];
-  // TODO(large-tensor): downstream functors may still use int
 
   int64_t width = x.dims()[3];
-  // TODO(large-tensor): downstream functors may still use int
 
   if (dx) {
     // set roi batch id

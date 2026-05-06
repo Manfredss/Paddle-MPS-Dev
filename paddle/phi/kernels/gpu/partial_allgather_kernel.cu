@@ -31,16 +31,16 @@ void PartialAllGatherOpCUDAKernel(const Context& dev_ctx,
 #if defined(PADDLE_WITH_NCCL) || defined(PADDLE_WITH_RCCL)
   auto in = &x_in;
   int64_t numel = in->numel();
-  ncclDataType_t dtype = phi::ToNCCLDataType(in->dtype());
+  ncclDataType_t dtype = ToNCCLDataType(in->dtype());
 
   gpuStream_t stream = nullptr;
-  phi::distributed::NCCLCommContext* comm_ctx = nullptr;
+  distributed::NCCLCommContext* comm_ctx = nullptr;
 
   int real_nranks = 0;
   int real_rank = 0;
 
   comm_ctx =
-      static_cast<phi::distributed::NCCLCommContext*>(dev_ctx.GetCommContext());
+      static_cast<distributed::NCCLCommContext*>(dev_ctx.GetCommContext());
   PADDLE_ENFORCE_NE(comm_ctx,
                     nullptr,
                     common::errors::Unavailable(
@@ -67,7 +67,7 @@ void PartialAllGatherOpCUDAKernel(const Context& dev_ctx,
                         numel,
                         nranks));
 
-  phi::DDim dims = in->dims();
+  DDim dims = in->dims();
   out->Resize(dims);
   dev_ctx.template Alloc<T>(out);
 

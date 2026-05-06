@@ -31,7 +31,7 @@ namespace fusion {
 #endif
 
 template <typename T>
-using CudnnDataType = phi::backends::gpu::CudnnDataType<T>;
+using CudnnDataType = backends::gpu::CudnnDataType<T>;
 template <typename T>
 using LayerNormParamType = typename CudnnDataType<T>::BatchNormParamType;
 
@@ -58,12 +58,11 @@ __device__ void CalcLayernormY(
     const int64_t cols,
     const LayerNormParamType<T> mean_val,
     const LayerNormParamType<T> invvar) {
-  using LoadT = phi::AlignedVector<T, VecSize>;
-  using StoreT = phi::AlignedVector<T, VecSize>;
-  using LoadU = phi::AlignedVector<U, VecSize>;
+  using LoadT = AlignedVector<T, VecSize>;
+  using StoreT = AlignedVector<T, VecSize>;
+  using LoadU = AlignedVector<U, VecSize>;
   using LoadScaleOrBias =
-      phi::AlignedVector<LayerNormScaleBiasT<T, U, ScaleBiasWithSameTypeX>,
-                         VecSize>;
+      AlignedVector<LayerNormScaleBiasT<T, U, ScaleBiasWithSameTypeX>, VecSize>;
   for (int64_t i = col_id * VecSize; i < cols; i += blockDim.x * VecSize) {
     LoadScaleOrBias scale_vec;
     LoadScaleOrBias bias_vec;
@@ -76,14 +75,14 @@ __device__ void CalcLayernormY(
           static_cast<LayerNormScaleBiasT<T, U, ScaleBiasWithSameTypeX>>(0);
     }
     // vectorize load data from global
-    phi::Load<T, VecSize>(&x[row_id * cols + i], &x_vec);
+    Load<T, VecSize>(&x[row_id * cols + i], &x_vec);
 
     if (scale != nullptr) {
-      phi::Load<LayerNormScaleBiasT<T, U, ScaleBiasWithSameTypeX>, VecSize>(
+      Load<LayerNormScaleBiasT<T, U, ScaleBiasWithSameTypeX>, VecSize>(
           &scale[i], &scale_vec);
     }
     if (bias != nullptr) {
-      phi::Load<LayerNormScaleBiasT<T, U, ScaleBiasWithSameTypeX>, VecSize>(
+      Load<LayerNormScaleBiasT<T, U, ScaleBiasWithSameTypeX>, VecSize>(
           &bias[i], &bias_vec);
     }
 
@@ -94,7 +93,7 @@ __device__ void CalcLayernormY(
                              (static_cast<U>(x_vec[ii]) - mean_val) * invvar +
                          static_cast<U>(bias_vec[ii]));
     }
-    phi::Store<T, VecSize>(y_vec, &y[row_id * cols + i]);
+    Store<T, VecSize>(y_vec, &y[row_id * cols + i]);
   }
 }
 
@@ -162,7 +161,7 @@ __global__ void FusedLayernormResidualDropoutBias(
   __shared__ U shared_var[32];
 #endif
 
-  phi::funcs::ReluFunctor<T> relu;
+  funcs::ReluFunctor<T> relu;
   U mean_val = 0;
   U var_val = 0;
   for (int64_t i = col_id * VecSize; i < cols; i += blockDim.x * VecSize) {
@@ -171,7 +170,7 @@ __global__ void FusedLayernormResidualDropoutBias(
                                       VecSize,
                                       true,
                                       false,
-                                      phi::funcs::ReluFunctor<T>,
+                                      funcs::ReluFunctor<T>,
                                       T,
                                       T,
                                       HasDropout>(row_id,
@@ -192,8 +191,8 @@ __global__ void FusedLayernormResidualDropoutBias(
                                                   residual_alpha);
   }
 
-  mean_val = phi::funcs::BlockReduceSum<U>(mean_val, shared_mean);
-  var_val = phi::funcs::BlockReduceSum<U>(var_val, shared_var);
+  mean_val = funcs::BlockReduceSum<U>(mean_val, shared_mean);
+  var_val = funcs::BlockReduceSum<U>(var_val, shared_var);
   if (threadIdx.x == 0) {
     auto scale = static_cast<LayerNormScaleBiasT<T, U, ScaleBiasWithSameTypeX>>(
         static_cast<float>(1.) / static_cast<float>(cols));
@@ -207,7 +206,7 @@ __global__ void FusedLayernormResidualDropoutBias(
   __syncthreads();
 
   mean_val = mean_share;
-  U invvar = phi::funcs::rsqrt_<U>(var_share + static_cast<U>(epsilon));
+  U invvar = funcs::rsqrt_<U>(var_share + static_cast<U>(epsilon));
 
   // calculate layernorm_dst
   CalcLayernormY<T, VecSize, U, ScaleBiasWithSameTypeX>(scale,
@@ -249,7 +248,7 @@ void LaunchFusedLayernormResidualDropoutBiasCUDAKernel(
     LayerNormParamType<T> *mean,
     LayerNormParamType<T> *var,
     const float residual_alpha = 1.0) {
-  auto kGridDim = phi::funcs::GetDesiredGridDim(grid_dim);
+  auto kGridDim = funcs::GetDesiredGridDim(grid_dim);
   if (dropout_prob != 0.0f) {
     FusedLayernormResidualDropoutBias<T,
                                       MaskType,
@@ -360,7 +359,7 @@ __global__ void FusedLayernormResidualDropoutBiasInfer(
   __shared__ U shared_var[32];
 #endif
 
-  phi::funcs::ReluFunctor<T> relu;
+  funcs::ReluFunctor<T> relu;
   U mean_val = 0;
   U var_val = 0;
   for (int i = col_id * VecSize; i < cols; i += blockDim.x * VecSize) {
@@ -369,25 +368,25 @@ __global__ void FusedLayernormResidualDropoutBiasInfer(
                                       VecSize,
                                       true,
                                       false,
-                                      phi::funcs::ReluFunctor<T>>(row_id,
-                                                                  i,
-                                                                  cols,
-                                                                  &state,
-                                                                  dropout_prob,
-                                                                  factor,
-                                                                  src,
-                                                                  residual,
-                                                                  bias,
-                                                                  dst,
-                                                                  mask,
-                                                                  is_test,
-                                                                  &mean_val,
-                                                                  &var_val,
-                                                                  relu);
+                                      funcs::ReluFunctor<T>>(row_id,
+                                                             i,
+                                                             cols,
+                                                             &state,
+                                                             dropout_prob,
+                                                             factor,
+                                                             src,
+                                                             residual,
+                                                             bias,
+                                                             dst,
+                                                             mask,
+                                                             is_test,
+                                                             &mean_val,
+                                                             &var_val,
+                                                             relu);
   }
 
-  mean_val = phi::funcs::BlockReduceSum<U>(mean_val, shared_mean);
-  var_val = phi::funcs::BlockReduceSum<U>(var_val, shared_var);
+  mean_val = funcs::BlockReduceSum<U>(mean_val, shared_mean);
+  var_val = funcs::BlockReduceSum<U>(var_val, shared_var);
   if (threadIdx.x == 0) {
     auto scale = static_cast<LayerNormScaleBiasT<T, U, ScaleBiasWithSameTypeX>>(
         static_cast<float>(1.) / static_cast<float>(cols));
@@ -400,7 +399,7 @@ __global__ void FusedLayernormResidualDropoutBiasInfer(
   __syncthreads();
 
   mean_val = mean_share;
-  U invvar = phi::funcs::rsqrt_<U>(var_share + static_cast<U>(epsilon));
+  U invvar = funcs::rsqrt_<U>(var_share + static_cast<U>(epsilon));
 
   // calculate layernorm_dst
   CalcLayernormY<T, VecSize, U, ScaleBiasWithSameTypeX>(scale,
@@ -440,7 +439,7 @@ struct FusedLayernormResidualDropoutBiasFunctor {
       LayerNormParamType<T> *mean,
       LayerNormParamType<T> *var,
       GPU(Stream_t) stream) {
-    int blockDim = phi::funcs::GetDesiredBlockDim(cols / VecSize);
+    int blockDim = funcs::GetDesiredBlockDim(cols / VecSize);
     if (mean != nullptr && var != nullptr) {
       LaunchFusedLayernormResidualDropoutBiasCUDAKernel<T,
                                                         MaskType,
@@ -565,12 +564,12 @@ __global__ __launch_bounds__(THREADS_PER_CTA) void fused_fast_ln_fwd_kernel(
     const float quant_min_bound = -127.0,
     const float residual_alpha = 1.0) {
   __shared__ U smem[WARPS_M * WARPS_N];
-  using Vec = phi::AlignedVector<T, VecSize>;
-  using Vec_scale = phi::AlignedVector<ScaleT, VecSize>;
-  using Vec_in_type = phi::AlignedVector<InType, VecSize>;
-  using Vec_out_type = phi::AlignedVector<OutType, VecSize>;
-  using Vec_float = phi::AlignedVector<float, VecSize>;
-  using MaskStoreT = phi::AlignedVector<MaskType, VecSize>;
+  using Vec = AlignedVector<T, VecSize>;
+  using Vec_scale = AlignedVector<ScaleT, VecSize>;
+  using Vec_in_type = AlignedVector<InType, VecSize>;
+  using Vec_out_type = AlignedVector<OutType, VecSize>;
+  using Vec_float = AlignedVector<float, VecSize>;
+  using MaskStoreT = AlignedVector<MaskType, VecSize>;
 
   const int tidx = threadIdx.x;
   const int bidx = blockIdx.x;
@@ -596,7 +595,7 @@ __global__ __launch_bounds__(THREADS_PER_CTA) void fused_fast_ln_fwd_kernel(
   if (bias_ptr != nullptr) {
 #pragma unroll
     for (int64_t it = 0, col = c; it < LDGS; it++) {
-      phi::Load<T, VecSize>(bias_ptr + col * VecSize, &bias[it]);
+      Load<T, VecSize>(bias_ptr + col * VecSize, &bias[it]);
       col += THREADS_PER_ROW;
     }
   }
@@ -605,8 +604,8 @@ __global__ __launch_bounds__(THREADS_PER_CTA) void fused_fast_ln_fwd_kernel(
   Vec_scale beta[LDGS];
 #pragma unroll
   for (int64_t it = 0, col = c; it < LDGS; it++) {
-    phi::Load<ScaleT, VecSize>(gamma_ptr + col * VecSize, &gamma[it]);
-    phi::Load<ScaleT, VecSize>(beta_ptr + col * VecSize, &beta[it]);
+    Load<ScaleT, VecSize>(gamma_ptr + col * VecSize, &gamma[it]);
+    Load<ScaleT, VecSize>(beta_ptr + col * VecSize, &beta[it]);
     col += THREADS_PER_ROW;
   }
 
@@ -621,11 +620,11 @@ __global__ __launch_bounds__(THREADS_PER_CTA) void fused_fast_ln_fwd_kernel(
 #pragma unroll
     for (int64_t it = 0, col = c; it < LDGS; it++) {
       int64_t index = row * ELTS_PER_ROW + col * VecSize;
-      phi::Load<T, VecSize>(residual_ptr + index, &residual[it]);
-      phi::Load<InType, VecSize>(x_ptr + index, &x_input[it]);
+      Load<T, VecSize>(residual_ptr + index, &residual[it]);
+      Load<InType, VecSize>(x_ptr + index, &x_input[it]);
       if (quant_out_scale_ptr != nullptr) {
-        phi::Load<float, VecSize>(quant_out_scale_ptr + col * VecSize,
-                                  &dequant_out_scale[it]);
+        Load<float, VecSize>(quant_out_scale_ptr + col * VecSize,
+                             &dequant_out_scale[it]);
       }
       col += THREADS_PER_ROW;
     }
@@ -705,14 +704,14 @@ __global__ __launch_bounds__(THREADS_PER_CTA) void fused_fast_ln_fwd_kernel(
 #pragma unroll
     for (int it = 0, col = c; it < LDGS; it++) {
       int64_t index = row * ELTS_PER_ROW + col * VecSize;
-      phi::Store<T, VecSize>(x[it], residual_out_ptr + index);
+      Store<T, VecSize>(x[it], residual_out_ptr + index);
       col += THREADS_PER_ROW;
     }
     if (!is_test && HasDropout) {
 #pragma unroll
       for (int it = 0, col = c; it < LDGS; it++) {
         int64_t index = row * ELTS_PER_ROW + col * VecSize;
-        phi::Store<MaskType, VecSize>(mask_vec[it], mask_out_ptr + index);
+        Store<MaskType, VecSize>(mask_vec[it], mask_out_ptr + index);
         col += THREADS_PER_ROW;
       }
     }
@@ -812,11 +811,11 @@ __global__ __launch_bounds__(THREADS_PER_CTA) void fused_fast_ln_fwd_kernel(
                                    static_cast<U>(beta[it][jt]));
 
         if (std::is_same<OutType, int8_t>::value)
-          x_output[it][jt] = phi::funcs::quant_helper(x[it][jt],
-                                                      quant_next_in_scale,
-                                                      quant_round_type,
-                                                      quant_max_bound,
-                                                      quant_min_bound);
+          x_output[it][jt] = funcs::quant_helper(x[it][jt],
+                                                 quant_next_in_scale,
+                                                 quant_round_type,
+                                                 quant_max_bound,
+                                                 quant_min_bound);
       }
     }
 
@@ -824,9 +823,9 @@ __global__ __launch_bounds__(THREADS_PER_CTA) void fused_fast_ln_fwd_kernel(
     for (int64_t it = 0, col = c; it < LDGS; it++) {
       int64_t index = row * ELTS_PER_ROW + col * VecSize;
       if (std::is_same<OutType, int8_t>::value) {
-        phi::Store<OutType, VecSize>(x_output[it], y_ptr + index);
+        Store<OutType, VecSize>(x_output[it], y_ptr + index);
       } else {
-        phi::Store<T, VecSize>(x[it], reinterpret_cast<T *>(y_ptr) + index);
+        Store<T, VecSize>(x[it], reinterpret_cast<T *>(y_ptr) + index);
       }
       col += THREADS_PER_ROW;
     }
@@ -874,7 +873,7 @@ void LaunchLayernormResidualDropoutBias(
     OutType *layernorm_dst,
     LayerNormParamType<T> *mean,
     LayerNormParamType<T> *var,
-    const phi::GPUContext &dev_ctx,
+    const GPUContext &dev_ctx,
     const float quant_last_in_scale = 1.0,
     const float *dequant_out_scale_data = nullptr,
     const float quant_next_in_scale = 1.0,
@@ -896,11 +895,13 @@ void LaunchLayernormResidualDropoutBias(
       PADDLE_ENFORCE_GPU_SUCCESS(GPU(MemsetAsync)(
           mask_data, 0, rows * cols * sizeof(MaskType), dev_ctx.stream()));
     }
-    auto kGridDim = phi::funcs::GetDesiredGridDim(rows);
+    // TODO(large-tensor): generic kernel launch uses int32 grid dim
+    PADDLE_ENFORCE_LE_INT_MAX(rows, "rows");
+    auto kGridDim = funcs::GetDesiredGridDim(rows);
     // call layernorm forward
-    switch (phi::funcs::GetDesiredBlockDim(cols)) {
+    switch (funcs::GetDesiredBlockDim(cols)) {
       FIXED_BLOCK_DIM_CASE(
-          phi::funcs::LayerNormForward<T, U, kBlockDim, ScaleBiasWithSameTypeX>
+          funcs::LayerNormForward<T, U, kBlockDim, ScaleBiasWithSameTypeX>
           <<<kGridDim, kBlockDim, 0, dev_ctx.stream()>>>(
               dst,
               scale,
@@ -1046,7 +1047,7 @@ void LaunchLayernormResidualDropoutBias(
 
   const int VecSize = MAX_CACHE_BYTES / sizeof(T);
   if (cols % VecSize != 0) {
-    int blockDim = phi::funcs::GetDesiredBlockDim(cols);
+    int blockDim = funcs::GetDesiredBlockDim(cols);
     LaunchFusedLayernormResidualDropoutBiasCUDAKernel<T,
                                                       uint8_t,
                                                       1,
@@ -1085,7 +1086,7 @@ void LaunchLayernormResidualDropoutBias(
           break;
       }
     } else {
-      int blockDim = phi::funcs::GetDesiredBlockDim(cols / VecSize);
+      int blockDim = funcs::GetDesiredBlockDim(cols / VecSize);
       LaunchFusedLayernormResidualDropoutBiasCUDAKernel<T,
                                                         uint8_t,
                                                         VecSize,
@@ -1122,7 +1123,7 @@ template <typename T,
           typename MaskType,
           bool ScaleBiasWithSameTypeX = false>
 void LaunchLayernormResidualDropoutGrad(
-    const phi::GPUContext &dev_ctx,
+    const GPUContext &dev_ctx,
     const int64_t rows,
     const int64_t cols,
     const float epsilon,
@@ -1145,7 +1146,7 @@ void LaunchLayernormResidualDropoutGrad(
   if (!is_upscale_in_train) {
     factor = static_cast<T>(1.0f);
   }
-  phi::funcs::ln_bwd_fast_kernel_driver<
+  funcs::ln_bwd_fast_kernel_driver<
       T,
       U,
       LayerNormScaleBiasT<T, U, ScaleBiasWithSameTypeX>,

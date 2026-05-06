@@ -15,24 +15,19 @@
 #ifdef PADDLE_WITH_HIP
 #include <hiprand.h>
 #include <hiprand_kernel.h>
-
-#include <hipcub/hipcub.hpp>
 typedef hiprandState curandState;
-namespace cub = hipcub;
 #else
 #include <curand.h>
 #include <curand_kernel.h>
-
-#include <cub/cub.cuh>
 #endif
 
 #include <iterator>
 #include <random>
-
 #include "paddle/phi/common/memory_utils.h"
 #include "paddle/phi/core/enforce.h"
 #include "paddle/phi/core/tensor_utils.h"
 #include "paddle/phi/kernels/class_center_sample_kernel.h"
+#include "paddle/phi/kernels/funcs/cub.h"
 
 #if defined(PADDLE_WITH_NCCL) || defined(PADDLE_WITH_RCCL)
 #include "paddle/common/flags.h"
@@ -349,15 +344,15 @@ void ClassCenterSampleKernel(const Context& dev_ctx,
   std::vector<T> shard_dim_vec(nranks + 1, 0);
   shard_dim_vec[rank + 1] = num_classes;
   DenseTensor num_classes_per_device;
-  phi::TensorFromVector(shard_dim_vec, dev_ctx, &num_classes_per_device);
+  TensorFromVector(shard_dim_vec, dev_ctx, &num_classes_per_device);
   T* num_classes_per_device_ptr = num_classes_per_device.data<T>();
 
 #if defined(PADDLE_WITH_NCCL) || defined(PADDLE_WITH_RCCL)
   if (nranks > 1) {
     auto stream = dev_ctx.stream();
-    phi::distributed::NCCLCommContext* comm_ctx = nullptr;
-    comm_ctx = static_cast<phi::distributed::NCCLCommContext*>(
-        dev_ctx.GetCommContext());
+    distributed::NCCLCommContext* comm_ctx = nullptr;
+    comm_ctx =
+        static_cast<distributed::NCCLCommContext*>(dev_ctx.GetCommContext());
     PADDLE_ENFORCE_NE(comm_ctx,
                       nullptr,
                       common::errors::Unavailable(
@@ -366,7 +361,7 @@ void ClassCenterSampleKernel(const Context& dev_ctx,
 
     comm_ctx->AllReduce(
         &num_classes_per_device, num_classes_per_device, ncclSum, stream);
-    phi::backends::gpu::GpuStreamSync(stream);
+    backends::gpu::GpuStreamSync(stream);
   }
 #endif
 
@@ -451,7 +446,7 @@ void ClassCenterSampleKernel(const Context& dev_ctx,
                      (NumBlocks(num_classes) * kNumCUDAThreads * vec_size) +
                  1) *
                 vec_size;
-  // auto gen_cuda = phi::DefaultCUDAGenerator(device_id);
+  // auto gen_cuda = DefaultCUDAGenerator(device_id);
   auto gen_cuda = dev_ctx.GetGenerator();
   if (!fix_seed) {
     auto seed_offset = gen_cuda->IncrementOffset(offset);
@@ -564,13 +559,13 @@ void ClassCenterSampleKernel(const Context& dev_ctx,
           dev_ctx.template Alloc<T>(remapped_label));
 
   // step 14: Get sampled class center for output
-  phi::Copy<Context>(dev_ctx,
-                     num_classes_per_device,
-                     phi::CPUPlace(),
-                     true,
-                     &num_classes_per_device);
+  Copy<Context>(dev_ctx,
+                num_classes_per_device,
+                CPUPlace(),
+                true,
+                &num_classes_per_device);
   T actual_num_samples = num_classes_per_device.data<T>()[rank + 1];
-  sampled_local_class_center->Resize(common::make_ddim({actual_num_samples}));
+  sampled_local_class_center->Resize({actual_num_samples});
 
   T* sampled_local_class_center_ptr =
       dev_ctx.template Alloc<T>(sampled_local_class_center);

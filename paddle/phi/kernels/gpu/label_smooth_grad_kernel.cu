@@ -21,16 +21,15 @@
 namespace phi {
 template <typename T>
 struct LabelSmoothGradFunctor {
-  using MPType = typename phi::dtype::MPTypeTrait<T>::Type;
-  MPType epsilon;
+  using MT = typename MPTypeTrait<T>::Type;
+  MT epsilon;
 
   __forceinline__ LabelSmoothGradFunctor(float epsilon_data) {
-    epsilon = static_cast<MPType>(epsilon_data);
+    epsilon = static_cast<MT>(epsilon_data);
   }
 
   __device__ __forceinline__ T operator()(const T x) const {
-    return static_cast<T>((static_cast<MPType>(1) - epsilon) *
-                          static_cast<MPType>(x));
+    return static_cast<T>((static_cast<MT>(1) - epsilon) * static_cast<MT>(x));
   }
 };
 
@@ -44,7 +43,7 @@ void LabelSmoothGradKernel(const Context& dev_ctx,
   std::vector<const DenseTensor*> ins = {&out_grad};
   std::vector<DenseTensor*> outs = {label_grad};
   auto functor = LabelSmoothGradFunctor<T>(epsilon);
-  phi::funcs::ElementwiseKernel<T>(dev_ctx, ins, &outs, functor);
+  funcs::ElementwiseKernel<T>(dev_ctx, ins, &outs, functor);
 }
 
 }  // namespace phi

@@ -33,12 +33,12 @@ template <typename Context>
 inline std::vector<size_t> GetLodFromRoisNum(const Context& dev_ctx,
                                              const DenseTensor* rois_num) {
   std::vector<size_t> rois_lod;
-  if (rois_num->dtype() == phi::DataType::INT64) {
+  if (rois_num->dtype() == DataType::INT64) {
     auto* rois_num_data = rois_num->data<int64_t>();
     DenseTensor cpu_tensor;
-    if (rois_num->place().GetType() == phi::AllocationType::GPU ||
-        rois_num->place().GetType() == phi::AllocationType::XPU) {
-      Copy<Context>(dev_ctx, *rois_num, phi::CPUPlace(), true, &cpu_tensor);
+    if (rois_num->place().GetType() == AllocationType::GPU ||
+        rois_num->place().GetType() == AllocationType::XPU) {
+      Copy<Context>(dev_ctx, *rois_num, CPUPlace(), true, &cpu_tensor);
       rois_num_data = cpu_tensor.data<int64_t>();
     }
     rois_lod.push_back(static_cast<size_t>(0));
@@ -46,12 +46,12 @@ inline std::vector<size_t> GetLodFromRoisNum(const Context& dev_ctx,
       rois_lod.push_back(rois_lod.back() +
                          static_cast<size_t>(rois_num_data[i]));
     }
-  } else if (rois_num->dtype() == phi::DataType::INT32) {
+  } else if (rois_num->dtype() == DataType::INT32) {
     auto* rois_num_data = rois_num->data<int>();
     DenseTensor cpu_tensor;
-    if (rois_num->place().GetType() == phi::AllocationType::GPU ||
-        rois_num->place().GetType() == phi::AllocationType::XPU) {
-      Copy<Context>(dev_ctx, *rois_num, phi::CPUPlace(), true, &cpu_tensor);
+    if (rois_num->place().GetType() == AllocationType::GPU ||
+        rois_num->place().GetType() == AllocationType::XPU) {
+      Copy<Context>(dev_ctx, *rois_num, CPUPlace(), true, &cpu_tensor);
       rois_num_data = cpu_tensor.data<int>();
     }
     rois_lod.push_back(static_cast<size_t>(0));

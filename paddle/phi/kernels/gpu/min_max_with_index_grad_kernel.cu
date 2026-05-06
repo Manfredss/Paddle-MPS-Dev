@@ -58,9 +58,9 @@ using EnableIfNonInteger =
       indices_dim[dim_val] = 1;                                              \
       shallow_copied_inds.Resize(indices_dim);                               \
     }                                                                        \
-    phi::funcs::SetConstant<Context, T> functor;                             \
+    funcs::SetConstant<Context, T> functor;                                  \
     functor(dev_ctx, x_grad, static_cast<T>(0));                             \
-    phi::funcs::gpu_scatter_add_kernel<T, int64_t>(                          \
+    funcs::gpu_scatter_add_kernel<T, int64_t>(                               \
         *x_grad, dim_val, shallow_copied_inds, values_grad, true, dev_ctx);  \
   }                                                                          \
   template <typename T, typename Context, EnableIfInteger<T> = 0>            \
@@ -72,7 +72,7 @@ using EnableIfNonInteger =
                                    const Scalar& dim,                        \
                                    bool keepdim,                             \
                                    DenseTensor* x_grad) {                    \
-    std::string dtype_name = phi::DataTypeToString(values.dtype());          \
+    std::string dtype_name = DataTypeToString(values.dtype());               \
     PADDLE_ENFORCE_EQ(                                                       \
         0,                                                                   \
         1,                                                                   \

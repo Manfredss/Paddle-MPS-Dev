@@ -168,10 +168,10 @@ void FoldInterpOutsizeFusePass::FoldInterpOutsize(ir::Graph* graph) const {
         scope, common::errors::InvalidArgument("Scope cannot be nullptr."));
 
     auto* concat_y_t =
-        scope->GetVar(concat_y->Name())->GetMutable<phi::DenseTensor>();
+        scope->GetVar(concat_y->Name())->GetMutable<DenseTensor>();
     // concat_y int64 --> int32
     auto tensor_type = concat_y_t->dtype();
-    if (tensor_type == phi::DataType::INT64) {
+    if (tensor_type == DataType::INT64) {
       CastToInt32(concat_y_t, nullptr);
     }
     bilinear_interp->Op()->RenameInput(cast2_out->Name(), concat_y->Name());

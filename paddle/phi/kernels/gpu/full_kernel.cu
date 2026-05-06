@@ -41,7 +41,7 @@ void FullKernel(const Context& dev_ctx,
                 const Scalar& val,
                 DataType dtype,
                 DenseTensor* out) {
-  out->Resize(common::make_ddim(shape.GetData()));
+  out->Resize(shape.GetData());
   int64_t numel = out->numel();
   dev_ctx.template Alloc<T>(out);
 
@@ -52,7 +52,7 @@ void FullKernel(const Context& dev_ctx,
     // This function has no input, so the inputs.size() == 0. Use kUnary, but
     // the data will not be loaded in the kernel because the number of
     // parameters in the operator is 0
-    phi::funcs::ElementwiseKernel<T>(
+    funcs::ElementwiseKernel<T>(
         dev_ctx, inputs, &outputs, FullFunctor<T>(val.to<T>()));
   }
 }
@@ -71,13 +71,13 @@ void FullLikeKernel(const Context& dev_ctx,
   // the operator is 0
   int64_t numel = out->numel();
 
-  if (!std::is_same<T, phi::complex64>::value &&
-      !std::is_same<T, phi::complex128>::value) {
+  if (!std::is_same<T, complex64>::value &&
+      !std::is_same<T, complex128>::value && !std::is_same<T, int64_t>::value) {
     auto value = val.to<double>();
     using CommonType = typename std::common_type<
         float,
-        typename std::conditional<std::is_same<T, phi::float16>::value ||
-                                      std::is_same<T, phi::bfloat16>::value,
+        typename std::conditional<std::is_same<T, float16>::value ||
+                                      std::is_same<T, bfloat16>::value,
                                   float,
                                   T>::type>::type;
     auto common_type_value = static_cast<CommonType>(value);
@@ -108,12 +108,12 @@ void FullLikeKernel(const Context& dev_ctx,
             static_cast<float>(value)));
 
     if (numel > 0) {
-      phi::funcs::ElementwiseKernel<T>(
+      funcs::ElementwiseKernel<T>(
           dev_ctx, inputs, &outputs, FullFunctor<T>(value));
     }
   } else {
     if (numel > 0) {
-      phi::funcs::ElementwiseKernel<T>(
+      funcs::ElementwiseKernel<T>(
           dev_ctx, inputs, &outputs, FullFunctor<T>(val.to<T>()));
     }
   }

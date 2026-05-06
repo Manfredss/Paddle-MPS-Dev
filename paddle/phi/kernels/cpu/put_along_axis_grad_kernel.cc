@@ -35,12 +35,21 @@ void PutAlongAxisGradKernel(const Context& dev_ctx,
                             bool include_self,
                             DenseTensor* x_grad,
                             DenseTensor* value_grad) {
+  if (x.numel() == 0) {
+    if (x_grad) {
+      dev_ctx.template Alloc<T>(x_grad);
+    }
+    if (value_grad) {
+      dev_ctx.template Alloc<T>(value_grad);
+    }
+    return;
+  }
   const auto& index_type = index.dtype();
   if (x_grad) {
-    phi::Copy(dev_ctx, out_grad, dev_ctx.GetPlace(), false, x_grad);
+    Copy(dev_ctx, out_grad, dev_ctx.GetPlace(), false, x_grad);
     if (include_self == false || reduce == "assign") {
       if (index_type == DataType::INT32) {
-        phi::funcs::cpu_scatter_input_grad_kernel<T, int32_t>(
+        funcs::cpu_scatter_input_grad_kernel<T, int32_t>(
             // Here passing an unused argument out_grad, because it's
             // convenient to instantiate a bunch of template function with the
             // same arguments list.
@@ -51,13 +60,13 @@ void PutAlongAxisGradKernel(const Context& dev_ctx,
             include_self,
             dev_ctx);
       } else {
-        phi::funcs::cpu_scatter_input_grad_kernel<T, int64_t>(
+        funcs::cpu_scatter_input_grad_kernel<T, int64_t>(
             out_grad, axis, index, *x_grad, include_self, dev_ctx);
       }
     } else if (reduce == "multiply" || reduce == "mul" || reduce == "amin" ||
                reduce == "amax") {
       if (index_type == DataType::INT32) {
-        phi::funcs::cpu_scatter_mul_min_max_input_grad_kernel<T, int32_t>(
+        funcs::cpu_scatter_mul_min_max_input_grad_kernel<T, int32_t>(
             out_grad,
             axis,
             index,
@@ -69,7 +78,7 @@ void PutAlongAxisGradKernel(const Context& dev_ctx,
             include_self,
             dev_ctx);
       } else {
-        phi::funcs::cpu_scatter_mul_min_max_input_grad_kernel<T, int64_t>(
+        funcs::cpu_scatter_mul_min_max_input_grad_kernel<T, int64_t>(
             out_grad,
             axis,
             index,
@@ -83,7 +92,7 @@ void PutAlongAxisGradKernel(const Context& dev_ctx,
       }
     } else if (reduce == "mean") {
       if (index_type == DataType::INT32) {
-        phi::funcs::cpu_scatter_mean_input_grad_kernel<T, int32_t>(
+        funcs::cpu_scatter_mean_input_grad_kernel<T, int32_t>(
             // Here passing an unused argument out_grad, because it's
             // convenient to instantiate a bunch of template function with the
             // same arguments list.
@@ -94,7 +103,7 @@ void PutAlongAxisGradKernel(const Context& dev_ctx,
             include_self,
             dev_ctx);
       } else {
-        phi::funcs::cpu_scatter_mean_input_grad_kernel<T, int64_t>(
+        funcs::cpu_scatter_mean_input_grad_kernel<T, int64_t>(
             out_grad, axis, index, *x_grad, include_self, dev_ctx);
       }
     }
@@ -108,42 +117,40 @@ void PutAlongAxisGradKernel(const Context& dev_ctx,
     memset(grad_data, 0, sizeof(T) * grad_size);
     if (reduce == "assign") {
       if (index_type == DataType::INT32) {
-        phi::funcs::cpu_scatter_value_grad_kernel<T, int32_t>(
+        funcs::cpu_scatter_value_grad_kernel<T, int32_t>(
             out_grad, axis, index, *value_grad, include_self, dev_ctx);
       } else if (index_type == DataType::INT64) {
-        phi::funcs::cpu_scatter_value_grad_kernel<T, int64_t>(
+        funcs::cpu_scatter_value_grad_kernel<T, int64_t>(
             out_grad, axis, index, *value_grad, include_self, dev_ctx);
       }
     } else if (reduce == "add" || reduce == "mean") {
       if (index_type == DataType::INT32) {
-        phi::funcs::cpu_scatter_add_mean_value_grad_kernel<T, int32_t>(
-            out_grad,
-            axis,
-            index,
-            out,
-            x,
-            value,
-            *value_grad,
-            reduce,
-            include_self,
-            dev_ctx);
+        funcs::cpu_scatter_add_mean_value_grad_kernel<T, int32_t>(out_grad,
+                                                                  axis,
+                                                                  index,
+                                                                  out,
+                                                                  x,
+                                                                  value,
+                                                                  *value_grad,
+                                                                  reduce,
+                                                                  include_self,
+                                                                  dev_ctx);
       } else {
-        phi::funcs::cpu_scatter_add_mean_value_grad_kernel<T, int64_t>(
-            out_grad,
-            axis,
-            index,
-            out,
-            x,
-            value,
-            *value_grad,
-            reduce,
-            include_self,
-            dev_ctx);
+        funcs::cpu_scatter_add_mean_value_grad_kernel<T, int64_t>(out_grad,
+                                                                  axis,
+                                                                  index,
+                                                                  out,
+                                                                  x,
+                                                                  value,
+                                                                  *value_grad,
+                                                                  reduce,
+                                                                  include_self,
+                                                                  dev_ctx);
       }
     } else if (reduce == "mul" || reduce == "multiply" || reduce == "amin" ||
                reduce == "amax") {
       if (index_type == DataType::INT32) {
-        phi::funcs::cpu_scatter_mul_min_max_value_grad_kernel<T, int32_t>(
+        funcs::cpu_scatter_mul_min_max_value_grad_kernel<T, int32_t>(
             out_grad,
             axis,
             index,
@@ -155,7 +162,7 @@ void PutAlongAxisGradKernel(const Context& dev_ctx,
             include_self,
             dev_ctx);
       } else {
-        phi::funcs::cpu_scatter_mul_min_max_value_grad_kernel<T, int64_t>(
+        funcs::cpu_scatter_mul_min_max_value_grad_kernel<T, int64_t>(
             out_grad,
             axis,
             index,

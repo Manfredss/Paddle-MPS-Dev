@@ -93,18 +93,16 @@ void CrossGradKernel(const Context &dev_ctx,
 
   auto *input_y_conj_data = dev_ctx.template Alloc<T>(&y_conj);
 
-  phi::funcs::ForRange<Context> for_range(dev_ctx, numel);
-  phi::funcs::ConjFunctor<T> functor_x(
-      input_x.data<T>(), numel, input_x_conj_data);
-  phi::funcs::ConjFunctor<T> functor_y(
-      input_y.data<T>(), numel, input_y_conj_data);
+  funcs::ForRange<Context> for_range(dev_ctx, numel);
+  funcs::ConjFunctor<T> functor_x(input_x.data<T>(), numel, input_x_conj_data);
+  funcs::ConjFunctor<T> functor_y(input_y.data<T>(), numel, input_y_conj_data);
   for_range(functor_x);
   for_range(functor_y);
 
   std::vector<T> input_x_vec, input_y_vec, input_dout_vec;
-  phi::TensorToVector(x_conj, dev_ctx, &input_x_vec);
-  phi::TensorToVector(y_conj, dev_ctx, &input_y_vec);
-  phi::TensorToVector(input_out_grad, dev_ctx, &input_dout_vec);
+  TensorToVector(x_conj, dev_ctx, &input_x_vec);
+  TensorToVector(y_conj, dev_ctx, &input_y_vec);
+  TensorToVector(input_out_grad, dev_ctx, &input_dout_vec);
   std::vector<T> out_dx_vec(output_x_grad->numel());
   std::vector<T> out_dy_vec(output_y_grad->numel());
 
@@ -129,8 +127,8 @@ void CrossGradKernel(const Context &dev_ctx,
       }
     }
   }
-  phi::TensorFromVector(out_dx_vec, dev_ctx, output_x_grad);
-  phi::TensorFromVector(out_dy_vec, dev_ctx, output_y_grad);
+  TensorFromVector(out_dx_vec, dev_ctx, output_x_grad);
+  TensorFromVector(out_dy_vec, dev_ctx, output_y_grad);
   output_x_grad->Resize(input_x_dims);
   output_y_grad->Resize(input_x_dims);
 }

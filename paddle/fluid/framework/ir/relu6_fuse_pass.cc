@@ -71,7 +71,7 @@ void Relu6FusePass::ApplyImpl(ir::Graph* graph) const {
         scope, common::errors::InvalidArgument("Scope cannot be nullptr."));
 
     const auto& clip_max_t =
-        scope->GetVar(clip_max_node->Name())->Get<phi::DenseTensor>();
+        scope->GetVar(clip_max_node->Name())->Get<DenseTensor>();
     auto clip_max_t_dims = clip_max_t.dims();
     PADDLE_ENFORCE_EQ(
         clip_max_t_dims.size(),
@@ -80,7 +80,7 @@ void Relu6FusePass::ApplyImpl(ir::Graph* graph) const {
                                         "must equal 1",
                                         clip_max_t_dims.size()));
     const auto& clip_min_t =
-        scope->GetVar(clip_min_node->Name())->Get<phi::DenseTensor>();
+        scope->GetVar(clip_min_node->Name())->Get<DenseTensor>();
     auto clip_min_t_dims = clip_min_t.dims();
     PADDLE_ENFORCE_EQ(
         clip_min_t_dims.size(),
@@ -91,12 +91,12 @@ void Relu6FusePass::ApplyImpl(ir::Graph* graph) const {
     auto tensor_type = clip_max_t.dtype();
     float max_val_ = 0.f;
     float min_val_ = 1.f;
-    if (tensor_type == phi::DataType::FLOAT16) {
-      auto* clip_max_t_fp16_ptr = clip_max_t.data<phi::dtype::float16>();
-      auto* clip_min_t_fp16_ptr = clip_min_t.data<phi::dtype::float16>();
+    if (tensor_type == DataType::FLOAT16) {
+      auto* clip_max_t_fp16_ptr = clip_max_t.data<phi::float16>();
+      auto* clip_min_t_fp16_ptr = clip_min_t.data<phi::float16>();
       max_val_ = static_cast<float>(clip_max_t_fp16_ptr[0]);
       min_val_ = static_cast<float>(clip_min_t_fp16_ptr[0]);
-    } else if (tensor_type == phi::DataType::FLOAT32) {
+    } else if (tensor_type == DataType::FLOAT32) {
       auto* clip_max_t_fp32_ptr = clip_max_t.data<float>();
       auto* clip_min_t_fp32_ptr = clip_min_t.data<float>();
       max_val_ = clip_max_t_fp32_ptr[0];

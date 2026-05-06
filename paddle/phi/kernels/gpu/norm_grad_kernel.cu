@@ -15,17 +15,11 @@
 #include "paddle/phi/kernels/norm_grad_kernel.h"
 
 #include <algorithm>
-#ifdef __NVCC__
-#include "cub/cub.cuh"
-#endif
-#ifdef __HIPCC__
-#include <hipcub/hipcub.hpp>
-namespace cub = hipcub;
-#endif
 #include "paddle/phi/backends/gpu/gpu_context.h"
 #include "paddle/phi/common/amp_type_traits.h"
 #include "paddle/phi/core/kernel_registry.h"
 #include "paddle/phi/kernels/funcs/common_shape.h"
+#include "paddle/phi/kernels/funcs/cub.h"
 
 namespace phi {
 
@@ -37,7 +31,7 @@ __global__ void NormalizeGradient(const T* x,
                                   const int axis_n,
                                   const int64_t post,
                                   T* x_grad) {
-  using MT = typename phi::dtype::MPTypeTrait<T>::Type;
+  using MT = typename MPTypeTrait<T>::Type;
   typedef cub::BlockReduce<MT, BlockDim> BlockReduce;
   __shared__ typename BlockReduce::TempStorage temp_storage_sum;
   int64_t num = pre * post;
@@ -94,6 +88,11 @@ void NormGradKernel(const Context& dev_ctx,
   if (axis < 0) axis = xdim.size() + axis;
   int64_t pre, n, post;
   funcs::GetPrePostNumel(xdim, axis, &pre, &n, &post);
+
+  // Handle zero-size tensor: skip kernel launch to avoid invalid CUDA config
+  if (pre * post == 0) {
+    return;
+  }
 
   const int block = 512;
   int max_threads = dev_ctx.GetMaxPhysicalThreadCount();

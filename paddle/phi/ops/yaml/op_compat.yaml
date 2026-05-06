@@ -206,6 +206,14 @@
     amin_grad : GetReduceGradExpectedKernelType
   manual_signature : [amin]
 
+- op : aminmax
+  backward : aminmax_grad
+  inputs :
+    x : X
+  outputs :
+    {min : Min, max : Max}
+  manual_signature : [aminmax]
+
 - op : anchor_generator
   inputs:
     input : Input
@@ -971,6 +979,22 @@
     {x : X, y : Y}
   outputs :
     out : Out
+
+- op : div_scale
+  backward : div_scale_grad
+  inputs :
+    x : X
+  outputs :
+    out : Out
+  scalar :
+    scale :
+      data_type : float
+      tensor_name : ScaleTensor
+    bias :
+      data_type : float
+      support_tensor : false
+  extra :
+    attrs : [bool use_mkldnn = false, bool use_onednn = false, str mkldnn_data_type = "float32", str onednn_data_type = ""]
 
 - op : divide (elementwise_div)
   backward : divide_grad (elementwise_div_grad)
@@ -2047,6 +2071,9 @@
      out : Out
   attrs : {slice_offset : slice_offset, accumulate : accumulate, is_combined : is_combined}
 
+- op : index_elementwise_put
+  backward : index_elementwise_put_grad, index_elementwise_put_double_grad
+
 - op : index_elementwise_put_with_tensor
   backward : index_elementwise_put_with_tensor_grad, index_elementwise_put_with_tensor_double_grad
   outputs :
@@ -2303,6 +2330,9 @@
     data_format: data_layout
   extra :
     attrs : [bool use_mkldnn = false, bool use_onednn = false]
+
+- op : linear_v2
+  backward : linear_v2_grad, linear_v2_double_grad
 
 - op : linspace
   inputs :
@@ -4043,6 +4073,9 @@
       tensor_name : StopUpdate
   get_expected_kernel_type :
     update_loss_scaling_ : GetUpdateLossScalingExpectedKernelType
+
+- op : view_shape
+  backward : view_shape_grad, view_shape_double_grad
 
 - op : viterbi_decode
   inputs :

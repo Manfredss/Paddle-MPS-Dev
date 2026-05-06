@@ -23,7 +23,7 @@ namespace phi {
 template <typename T>
 struct CudaLgammaFunctor {
   __device__ __forceinline__ T operator()(const T x) const {
-    using MT = typename phi::dtype::MPTypeTrait<T>::Type;
+    using MT = typename MPTypeTrait<T>::Type;
     const MT mp_x = static_cast<MT>(x);
     return static_cast<T>(Eigen::numext::lgamma(mp_x));
   }
@@ -40,7 +40,7 @@ void LgammaKernel(const Context& dev_ctx,
   std::vector<const DenseTensor*> ins = {&x};
   std::vector<DenseTensor*> outs = {out};
   auto functor = CudaLgammaFunctor<T>();
-  phi::funcs::ElementwiseKernel<T>(dev_ctx, ins, &outs, functor);
+  funcs::ElementwiseKernel<T>(dev_ctx, ins, &outs, functor);
 }
 }  // namespace phi
 

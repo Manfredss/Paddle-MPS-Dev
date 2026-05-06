@@ -280,17 +280,17 @@ void QkQkvAttentionXPUFusePass::ApplyQkQkvAttentionXPUFuse(
         block_input_max_in_desc->SetShape(input_max_desc.GetShape());
         block_input_max_in_desc->SetDataType(input_max_desc.GetDataType());
 
-        phi::DenseTensor input_max_in_cpu_tensor;
+        DenseTensor input_max_in_cpu_tensor;
         auto* cpu_ctx = static_cast<phi::CPUContext*>(
-            phi::DeviceContextPool::Instance().Get(phi::CPUPlace()));
-        input_max_in_cpu_tensor.set_type(phi::DataType::FLOAT32);
+            phi::DeviceContextPool::Instance().Get(CPUPlace()));
+        input_max_in_cpu_tensor.set_type(DataType::FLOAT32);
         input_max_in_cpu_tensor.Resize({max_ptr_size});
         std::vector<float> input_max(max_ptr_size, input_max_vec[i]);
         memcpy(cpu_ctx->Alloc<float>(&input_max_in_cpu_tensor),
                input_max.data(),
                max_ptr_size * sizeof(float));
         Assign(input_max_in_cpu_tensor,
-               scope->Var(input_max_name)->GetMutable<phi::DenseTensor>());
+               scope->Var(input_max_name)->GetMutable<DenseTensor>());
         if (i == 0) {
           fused_op_desc.SetInput("q_max", {input_max_name});
           fused_op_desc.SetInput("k_max", {input_max_name});

@@ -77,11 +77,11 @@ struct PowFunctorHighPrecision {
 template <typename T, typename Functor>
 __global__ void ReduceSumWithSubtract(
     const T* x, const T* y, T* out, int64_t N, Functor func) {
-  using MT = typename phi::dtype::MPTypeTrait<T>::Type;
+  using MT = typename MPTypeTrait<T>::Type;
   MT sum_val(0.0);
   CUDA_KERNEL_LOOP_TYPE(i, N, int64_t) { sum_val += func(x[i], y[i]); }
 
-  sum_val = phi::funcs::BlockReduceSum<MT>(sum_val, FULL_MASK);
+  sum_val = funcs::BlockReduceSum<MT>(sum_val, FULL_MASK);
   if (threadIdx.x == 0) {
     out[blockIdx.x] = static_cast<T>(sum_val);
   }
@@ -92,13 +92,13 @@ __global__ void ReduceMaxWithSubtract(const T* x,
                                       const T* y,
                                       T* out,
                                       int64_t N) {
-  using MT = typename phi::dtype::MPTypeTrait<T>::Type;
+  using MT = typename MPTypeTrait<T>::Type;
   MT max_val = std::numeric_limits<MT>::min();
   CUDA_KERNEL_LOOP_TYPE(i, N, int64_t) {
     max_val = max(max_val, abs(static_cast<MT>(x[i]) - static_cast<MT>(y[i])));
   }
 
-  max_val = phi::funcs::BlockReduceMax<MT>(max_val, FULL_MASK);
+  max_val = funcs::BlockReduceMax<MT>(max_val, FULL_MASK);
   if (threadIdx.x == 0) {
     out[blockIdx.x] = static_cast<T>(max_val);
   }
@@ -109,13 +109,13 @@ __global__ void ReduceMinWithSubtract(const T* x,
                                       const T* y,
                                       T* out,
                                       int64_t N) {
-  using MT = typename phi::dtype::MPTypeTrait<T>::Type;
+  using MT = typename MPTypeTrait<T>::Type;
   MT min_val = std::numeric_limits<MT>::max();
   CUDA_KERNEL_LOOP_TYPE(i, N, int64_t) {
     min_val = min(min_val, abs(static_cast<MT>(x[i]) - static_cast<MT>(y[i])));
   }
 
-  min_val = phi::funcs::BlockReduceMin<MT>(min_val, FULL_MASK);
+  min_val = funcs::BlockReduceMin<MT>(min_val, FULL_MASK);
   if (threadIdx.x == 0) {
     out[blockIdx.x] = static_cast<T>(min_val);
   }
@@ -128,12 +128,11 @@ void DistKernel(const Context& dev_ctx,
                 float p,
                 DenseTensor* out) {
   if (x.numel() == 0 || y.numel() == 0) {
-    phi::Full<T, Context>(
-        dev_ctx, phi::IntArray(common::vectorize(out->dims())), 0, out);
+    Full<T, Context>(dev_ctx, out->dims(), 0, out);
     return;
   }
 
-  using MT = typename phi::dtype::MPTypeTrait<T>::Type;
+  using MT = typename MPTypeTrait<T>::Type;
   DenseTensor intermediate;
   const T* x_ptr = x.data<T>();
   const T* y_ptr = y.data<T>();
@@ -145,8 +144,8 @@ void DistKernel(const Context& dev_ctx,
   if (xdim == y.dims()) {  // same shape
     int64_t n = x.numel();
 
-    auto config = phi::backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n);
-    intermediate.Resize(common::make_ddim({config.block_per_grid.x}));
+    auto config = backends::gpu::GetGpuLaunchConfig1D(dev_ctx, n);
+    intermediate.Resize({config.block_per_grid.x});
     T* i_ptr = dev_ctx.template Alloc<T>(&intermediate);
     std::vector<int64_t> axis_dims = {static_cast<int64_t>(-1)};
     std::vector<int> reduce_axis =
@@ -156,13 +155,13 @@ void DistKernel(const Context& dev_ctx,
       ReduceSumWithSubtract<T>
           <<<config.block_per_grid.x, config.thread_per_block.x, 0, stream>>>(
               x_ptr, y_ptr, i_ptr, n, ZeroOrderFunctor<T, MT>());
-      phi::funcs::ReduceKernel<T, T, kps::AddFunctor, kps::IdentityFunctor<MT>>(
+      funcs::ReduceKernel<T, T, kps::AddFunctor, kps::IdentityFunctor<MT>>(
           dev_ctx, intermediate, out, kps::IdentityFunctor<MT>(), reduce_axis);
     } else if (p == INFINITY) {
       ReduceMaxWithSubtract<T>
           <<<config.block_per_grid.x, config.thread_per_block.x, 0, stream>>>(
               x_ptr, y_ptr, i_ptr, n);
-      phi::MaxRawKernel<T, Context>(
+      MaxRawKernel<T, Context>(
           dev_ctx, intermediate, reduce_axis, true, true, out);
 
     } else if (p == -INFINITY) {
@@ -170,7 +169,7 @@ void DistKernel(const Context& dev_ctx,
           <<<config.block_per_grid.x, config.thread_per_block.x, 0, stream>>>(
               x_ptr, y_ptr, i_ptr, n);
 
-      phi::MinRawKernel<T, Context>(
+      MinRawKernel<T, Context>(
           dev_ctx, intermediate, reduce_axis, true, true, out);
 
     } else {
@@ -182,18 +181,17 @@ void DistKernel(const Context& dev_ctx,
       out_other.Resize(out->dims());
       dev_ctx.template Alloc<MT>(&out_other);
 
-      phi::funcs::
-          ReduceKernel<T, MT, kps::AddFunctor, kps::IdentityFunctor<MT>>(
-              dev_ctx,
-              intermediate,
-              &out_other,
-              kps::IdentityFunctor<MT>(),
-              reduce_axis);
+      funcs::ReduceKernel<T, MT, kps::AddFunctor, kps::IdentityFunctor<MT>>(
+          dev_ctx,
+          intermediate,
+          &out_other,
+          kps::IdentityFunctor<MT>(),
+          reduce_axis);
       std::vector<const DenseTensor*> ins = {&out_other};
       std::vector<DenseTensor*> outs = {out};
 
       MT p_order_ = static_cast<MT>(1.f / p_order);
-      phi::funcs::ElementwiseKernel<T>(
+      funcs::ElementwiseKernel<T>(
           dev_ctx, ins, &outs, PowFunctorHighPrecision<MT, MT, T>(p_order_));
     }
 

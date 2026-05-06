@@ -18,19 +18,19 @@
 #include <thrust/device_vector.h>
 #include <thrust/reverse.h>
 #include <thrust/scan.h>
-#ifdef __NVCC__
-#include <cub/cub.cuh>
-#endif
-#ifdef __HIPCC__
-#include <hipcub/hipcub.hpp>
-namespace cub = hipcub;
-#endif
-
 #include "paddle/common/hostdevice.h"
 #include "paddle/phi/backends/gpu/gpu_context.h"
 #include "paddle/phi/common/amp_type_traits.h"
 #include "paddle/phi/common/memory_utils.h"
 #include "paddle/phi/core/kernel_registry.h"
+#include "paddle/phi/kernels/funcs/cub.h"
+#include "paddle/phi/kernels/funcs/cumprod.h"
+#include "paddle/phi/kernels/funcs/elementwise_functor.h"
+#include "paddle/phi/kernels/funcs/inclusive_scan.h"
+
+#include "paddle/common/flags.h"
+
+COMMON_DECLARE_bool(use_accuracy_compatible_kernel);
 
 namespace phi {
 
@@ -203,7 +203,7 @@ __global__ void BlockScanKernel(T* d_out,
                                 int64_t scan_size,
                                 bool exclusive,
                                 Op op) {
-  using MT = typename phi::dtype::MPTypeTrait<T>::Type;
+  using MT = typename MPTypeTrait<T>::Type;
   using CallbackOp = BlockPrefixCallbackOp<MT, Op>;
 
   // Specialize BlockLoad, BlockStore, and BlockRadixSort collective types
@@ -263,13 +263,13 @@ void ThrustCumsumKernel(const Context& dev_ctx,
                         int64_t size,
                         bool reverse,
                         bool exclusive) {
-  using MT = typename phi::dtype::MPTypeTrait<T>::Type;
+  using MT = typename MPTypeTrait<T>::Type;
 
 #ifdef __HIPCC__
   const auto& policy = thrust::hip::par.on(dev_ctx.stream());
 #else
-  phi::memory_utils::ThrustAllocator<cudaStream_t> allocator(dev_ctx.GetPlace(),
-                                                             dev_ctx.stream());
+  memory_utils::ThrustAllocator<cudaStream_t> allocator(dev_ctx.GetPlace(),
+                                                        dev_ctx.stream());
   const auto& policy = thrust::cuda::par(allocator).on(dev_ctx.stream());
 #endif
 
@@ -342,7 +342,7 @@ void ScanKernel(const Context& dev_ctx,
   // For 0D Tensor
   if (out->numel() == 1) {
     auto raw_dims = out->dims();
-    phi::Copy<Context>(dev_ctx, x, dev_ctx.GetPlace(), false, out);
+    Copy<Context>(dev_ctx, x, dev_ctx.GetPlace(), false, out);
     out->Resize(raw_dims);
     return;
   }
@@ -459,11 +459,43 @@ void CumsumKernel(const Context& dev_ctx,
                   bool exclusive,
                   bool reverse,
                   DenseTensor* out) {
-  using Op =
-      typename std::conditional<std::is_same<T, phi::complex64>::value ||
-                                    std::is_same<T, phi::complex128>::value,
-                                ComplexSum,
-                                cub::Sum>::type;
+  using Op = typename std::conditional<std::is_same<T, complex64>::value ||
+                                           std::is_same<T, complex128>::value,
+                                       ComplexSum,
+                                       cub::Sum>::type;
+  if (FLAGS_use_accuracy_compatible_kernel && !exclusive) {
+    if (out && out->numel() == 0) {
+      dev_ctx.template Alloc<T>(out);
+      return;
+    }
+    dev_ctx.template Alloc<T>(out);
+
+    size_t outer_dim = 1;
+    size_t mid_dim = 1;
+    size_t inner_dim = 1;
+
+    if (flatten) {
+      mid_dim = x.numel();
+    } else {
+      GetCumprodDimInfo(
+          x.dims(), axis.to<int>(), &outer_dim, &mid_dim, &inner_dim);
+    }
+
+    const T* x_data = x.data<T>();
+    T* out_data = out->data<T>();
+
+    funcs::InclusiveScan(x_data,
+                         out_data,
+                         outer_dim,
+                         mid_dim,
+                         inner_dim,
+                         static_cast<T>(0),
+                         funcs::AddFunctor<T>(),
+                         /*reverse=*/reverse,
+                         dev_ctx);
+
+    return;
+  }
   auto op = Op();
   ScanKernel<T, Context, Op>(
       dev_ctx, x, axis.to<int>(), flatten, exclusive, reverse, op, out);
