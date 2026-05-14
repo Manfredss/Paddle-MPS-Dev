@@ -381,5 +381,86 @@ class TestSiluAPI(unittest.TestCase):
             run(place, False)
 
 
+def _mps_available():
+    return (
+        hasattr(paddle, "is_compiled_with_mps")
+        and paddle.is_compiled_with_mps()
+        and getattr(paddle, "mps", None) is not None
+        and paddle.mps.is_available()
+    )
+
+
+@unittest.skipUnless(_mps_available(), "Paddle is not built with MPS or MPS is unavailable")
+class TestSiluMPS(unittest.TestCase):
+    """MPS-backend coverage for paddle.nn.functional.silu (and paddle.silu)."""
+
+    def setUp(self):
+        paddle.disable_static()
+        paddle.mps.set_device(0)
+        np.random.seed(2026)
+
+    def _check_vs_numpy(self, x_np, rtol=1e-5, atol=1e-5):
+        x_p = paddle.to_tensor(x_np, place="mps")
+        out_fn = F.silu(x_p).numpy()
+        np.testing.assert_allclose(out_fn, silu(x_np), rtol=rtol, atol=atol)
+
+    def _check_vs_cpu(self, x_np, rtol=1e-5, atol=1e-6):
+        x_p_mps = paddle.to_tensor(x_np, place="mps")
+        x_p_cpu = paddle.to_tensor(x_np, place="cpu")
+        np.testing.assert_allclose(
+            F.silu(x_p_mps).numpy(), F.silu(x_p_cpu).numpy(), rtol=rtol, atol=atol
+        )
+
+    def test_basic_shapes(self):
+        for shape in [(7,), (3, 4), (2, 3, 5), (2, 3, 4, 5)]:
+            with self.subTest(shape=shape):
+                x = np.random.uniform(-5.0, 5.0, shape).astype(np.float32)
+                self._check_vs_numpy(x)
+                self._check_vs_cpu(x)
+
+    def test_scalar_tensor(self):
+        x = np.array(np.float32(1.5))
+        self._check_vs_numpy(x)
+
+    def test_large_1d(self):
+        x = np.random.uniform(-10.0, 10.0, (4096,)).astype(np.float32)
+        self._check_vs_numpy(x)
+        self._check_vs_cpu(x)
+
+    def test_known_values(self):
+        x = np.array([0.0, 1.0, -1.0, 5.0, -5.0, 10.0, -10.0], dtype=np.float32)
+        self._check_vs_numpy(x)
+
+    def test_silu_zero_at_zero(self):
+        x = np.zeros((3, 4), dtype=np.float32)
+        out = F.silu(paddle.to_tensor(x, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.zeros_like(out), rtol=0, atol=1e-7)
+
+    def test_silu_saturation_at_large_negative(self):
+        # SiLU(x) -> 0 as x -> -infinity (x * sigmoid(x) -> 0).
+        x = np.array([-50.0, -100.0], dtype=np.float32)
+        out = F.silu(paddle.to_tensor(x, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.zeros_like(out), atol=1e-6)
+
+    def test_silu_large_positive_approaches_identity(self):
+        # SiLU(x) -> x as x -> +infinity.
+        x = np.array([20.0, 40.0], dtype=np.float32)
+        out = F.silu(paddle.to_tensor(x, place="mps")).numpy()
+        np.testing.assert_allclose(out, x, rtol=1e-5, atol=1e-5)
+
+    def test_paddle_silu_top_level_api(self):
+        # paddle.nn.functional.silu and paddle.nn.Silu should both work via MPS.
+        x = np.random.uniform(-3.0, 3.0, (4, 5)).astype(np.float32)
+        x_p = paddle.to_tensor(x, place="mps")
+        layer_out = nn.Silu()(x_p).numpy()
+        np.testing.assert_allclose(layer_out, silu(x), rtol=1e-5, atol=1e-5)
+
+    def test_dtype_and_place_preserved(self):
+        x = np.random.uniform(-1.0, 1.0, (3, 4)).astype(np.float32)
+        out = F.silu(paddle.to_tensor(x, place="mps"))
+        self.assertEqual(out.dtype, paddle.float32)
+        self.assertTrue("mps" in str(out.place).lower())
+
+
 if __name__ == '__main__':
     unittest.main()

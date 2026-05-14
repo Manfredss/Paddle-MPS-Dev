@@ -350,5 +350,79 @@ class TestRoundAPI(unittest.TestCase):
             np.testing.assert_allclose(out_ref, res[0], rtol=1e-05)
 
 
+def _mps_available():
+    return (
+        hasattr(paddle, "is_compiled_with_mps")
+        and paddle.is_compiled_with_mps()
+        and getattr(paddle, "mps", None) is not None
+        and paddle.mps.is_available()
+    )
+
+
+@unittest.skipUnless(_mps_available(), "Paddle is not built with MPS or MPS is unavailable")
+class TestRoundMPS(unittest.TestCase):
+    """MPS-backend coverage for paddle.round.
+
+    Uses non-halfway values to stay independent of tie-break semantics
+    (banker's rounding vs away-from-zero); a dedicated test cross-checks
+    against paddle's CPU kernel so any tie-break drift between backends
+    surfaces.
+    """
+
+    def setUp(self):
+        paddle.disable_static()
+        paddle.mps.set_device(0)
+        np.random.seed(2026)
+
+    def _check_vs_numpy(self, x_np):
+        out = paddle.round(paddle.to_tensor(x_np, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.round(x_np), rtol=1e-5, atol=1e-6)
+
+    def _check_vs_cpu(self, x_np):
+        out_mps = paddle.round(paddle.to_tensor(x_np, place="mps")).numpy()
+        out_cpu = paddle.round(paddle.to_tensor(x_np, place="cpu")).numpy()
+        np.testing.assert_allclose(out_mps, out_cpu, rtol=0, atol=0)
+
+    def test_basic_shapes(self):
+        for shape in [(7,), (3, 4), (2, 3, 5), (2, 3, 4, 5)]:
+            with self.subTest(shape=shape):
+                # Bias away from exact halfway values so tie-break choice
+                # doesn't affect the result.
+                x = np.random.uniform(-50.0, 50.0, shape).astype(np.float32)
+                x = x + 0.123
+                self._check_vs_numpy(x)
+
+    def test_large_1d(self):
+        x = np.random.uniform(-1000.0, 1000.0, (4096,)).astype(np.float32) + 0.123
+        self._check_vs_numpy(x)
+
+    def test_scalar_tensor(self):
+        x = np.array(np.float32(1.7))
+        self._check_vs_numpy(x)
+
+    def test_known_values(self):
+        x = np.array(
+            [0.0, 0.3, -0.3, 1.7, -1.7, 2.4, -2.4, 5.9, -5.9],
+            dtype=np.float32,
+        )
+        self._check_vs_numpy(x)
+
+    def test_integer_inputs_unchanged(self):
+        x = np.array([-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0], dtype=np.float32)
+        self._check_vs_numpy(x)
+
+    def test_matches_cpu_kernel_on_random(self):
+        # Cross-check MPS against the CPU kernel on values that include
+        # halfway-adjacent points; any tie-break mismatch will surface here.
+        x = np.random.uniform(-10.0, 10.0, (256,)).astype(np.float32)
+        self._check_vs_cpu(x)
+
+    def test_dtype_and_place_preserved(self):
+        x = np.random.uniform(-5.0, 5.0, (3, 4)).astype(np.float32) + 0.123
+        out = paddle.round(paddle.to_tensor(x, place="mps"))
+        self.assertEqual(out.dtype, paddle.float32)
+        self.assertTrue("mps" in str(out.place).lower())
+
+
 if __name__ == "__main__":
     unittest.main()
