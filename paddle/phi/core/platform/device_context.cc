@@ -45,7 +45,7 @@ limitations under the License. */
 namespace paddle {
 namespace platform {
 
-DeviceType Place2DeviceType(const phi::Place& place) {
+DeviceType Place2DeviceType(const Place& place) {
   if (phi::is_cpu_place(place)) {
     return platform::DeviceType::CPU;
   } else if (phi::is_gpu_place(place)) {
@@ -70,7 +70,7 @@ DeviceType Place2DeviceType(const phi::Place& place) {
 template <typename DevCtx>
 typename std::enable_if<!std::is_same<DevCtx, phi::GPUContext>::value,
                         DevCtx*>::type
-ConstructDevCtx(const phi::Place& p,
+ConstructDevCtx(const Place& p,
                 /*unused*/ int stream_priority UNUSED = 0) {
   return new DevCtx(p);
 }
@@ -78,12 +78,12 @@ ConstructDevCtx(const phi::Place& p,
 template <typename DevCtx>
 typename std::enable_if<std::is_same<DevCtx, phi::GPUContext>::value,
                         DevCtx*>::type
-ConstructDevCtx(const phi::Place& p, int stream_priority) {
+ConstructDevCtx(const Place& p, int stream_priority) {
   return new DevCtx(p, /*init=*/true, stream_priority);
 }
 #else
 template <typename DevCtx>
-DevCtx* ConstructDevCtx(const phi::Place& p,
+DevCtx* ConstructDevCtx(const Place& p,
                         /*unused*/ int stream_priority) {
   return new DevCtx(p);
 }
@@ -91,7 +91,7 @@ DevCtx* ConstructDevCtx(const phi::Place& p,
 
 template <typename DevCtx>
 inline std::unique_ptr<DeviceContext> CreateDeviceContext(
-    const phi::Place& p,
+    const Place& p,
     bool disable_setting_default_stream_for_allocator,
     int stream_priority,
     bool set_to_default_stream) {
@@ -99,7 +99,7 @@ inline std::unique_ptr<DeviceContext> CreateDeviceContext(
 
   DevCtx* dev_ctx = ConstructDevCtx<DevCtx>(p, stream_priority);
   auto& instance = paddle::memory::allocation::AllocatorFacade::Instance();
-  if (p.GetType() == phi::AllocationType::GPU) {
+  if (p.GetType() == AllocationType::GPU) {
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
     auto* cuda_ctx = dynamic_cast<phi::GPUContext*>(dev_ctx);
 #if defined(PADDLE_WITH_CUDA)
@@ -122,7 +122,7 @@ inline std::unique_ptr<DeviceContext> CreateDeviceContext(
     cuda_ctx->PartialInitWithAllocator();
     dev_ctx->SetGenerator(phi::DefaultCUDAGenerator(p.GetDeviceId()).get());
 #endif
-  } else if (p.GetType() == phi::AllocationType::XPU) {
+  } else if (p.GetType() == AllocationType::XPU) {
 #if defined(PADDLE_WITH_XPU)
     auto* xpu_ctx = dynamic_cast<phi::XPUContext*>(dev_ctx);
     if (!disable_setting_default_stream_for_allocator) {
@@ -145,7 +145,7 @@ inline std::unique_ptr<DeviceContext> CreateDeviceContext(
     dev_ctx->SetGenerator(phi::DefaultCPUGenerator().get());
 #endif
 #ifdef PADDLE_WITH_CUSTOM_DEVICE
-  } else if (p.GetType() == phi::AllocationType::CUSTOM) {
+  } else if (p.GetType() == AllocationType::CUSTOM) {
     auto* custom_ctx = dynamic_cast<phi::CustomContext*>(dev_ctx);
     PADDLE_ENFORCE_NOT_NULL(
         custom_ctx,
@@ -153,9 +153,8 @@ inline std::unique_ptr<DeviceContext> CreateDeviceContext(
             "Failed to dynamic_cast dev_ctx into phi::CustomContext."));
 
     if (!disable_setting_default_stream_for_allocator) {
-      instance.SetDefaultStream(
-          phi::CustomPlace(p.GetDeviceType(), p.GetDeviceId()),
-          custom_ctx->stream());
+      instance.SetDefaultStream(CustomPlace(p.GetDeviceType(), p.GetDeviceId()),
+                                custom_ctx->stream());
     }
     dev_ctx->SetAllocator(instance.GetAllocator(p, custom_ctx->stream()).get());
     custom_ctx->PartialInitWithAllocator();
@@ -177,7 +176,7 @@ template <typename DevCtx>
 inline void EmplaceDeviceContext(
     std::map<Place, std::shared_future<std::unique_ptr<DeviceContext>>>*
         place_to_device_context,
-    const phi::Place& place,
+    const Place& place,
     bool disable_setting_default_stream_for_allocator,
     int stream_priority,
     bool set_to_default_stream) {
@@ -210,7 +209,7 @@ void EmplaceDeviceContexts(
     set.insert(p);
   }
   for (auto& place : set) {
-    if (place.GetType() == phi::AllocationType::CPU) {
+    if (place.GetType() == AllocationType::CPU) {
 #ifdef PADDLE_WITH_DNNL
       EmplaceDeviceContext<phi::OneDNNContext>(
           place_to_device_context,
@@ -226,7 +225,7 @@ void EmplaceDeviceContexts(
           /*unused*/ stream_priority,
           set_to_default_stream);
 #endif
-    } else if (place.GetType() == phi::AllocationType::GPU) {
+    } else if (place.GetType() == AllocationType::GPU) {
 #if defined(PADDLE_WITH_CUDA) || defined(PADDLE_WITH_HIP)
       EmplaceDeviceContext<phi::GPUContext>(
           place_to_device_context,
@@ -239,7 +238,7 @@ void EmplaceDeviceContexts(
           common::errors::Unimplemented("GPUPlace is not supported. Please "
                                         "re-compile with WITH_GPU option."));
 #endif
-    } else if (place.GetType() == phi::AllocationType::XPU) {
+    } else if (place.GetType() == AllocationType::XPU) {
 #ifdef PADDLE_WITH_XPU
       EmplaceDeviceContext<phi::XPUContext>(
           place_to_device_context,
@@ -274,7 +273,7 @@ void EmplaceDeviceContexts(
           "XPUPinnedPlace is not supported. Please re-compile with WITH_XPU "
           "option."));
 #endif
-    } else if (place.GetType() == phi::AllocationType::CUSTOM) {
+    } else if (place.GetType() == AllocationType::CUSTOM) {
 #ifdef PADDLE_WITH_CUSTOM_DEVICE
       EmplaceDeviceContext<phi::CustomContext>(
           place_to_device_context,
