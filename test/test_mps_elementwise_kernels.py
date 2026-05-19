@@ -123,11 +123,12 @@ class TestMPSElementwiseKernels(unittest.TestCase):
         shape = [2, 3]
         x_np = np.random.randn(*shape).astype(np.float32)
         scalar = 5.0
-        
+
         # Paddle
         x_paddle = paddle.to_tensor(x_np, place=self.device)
-        result_paddle = paddle.add(x_paddle, scalar)
-        
+        y_paddle = paddle.to_tensor(scalar, place=self.device)
+        result_paddle = paddle.add(x_paddle, y_paddle)
+
         # Reference
         if self.use_torch_ref:
             x_torch = torch.tensor(x_np, device=self.torch_device)
