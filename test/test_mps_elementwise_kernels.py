@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-Test MPS elementwise kernels by comparing with PyTorch MPS outputs.
-This ensures our MPS implementation matches PyTorch's behavior.
+Test MPS kernels by comparing with PyTorch MPS / NumPy outputs.
+
+Covers:
+- Elementwise binary ops (add, multiply, subtract, divide, ...) -> TestMPSElementwiseKernels
+- Activations (softmax, gelu, leaky_relu)                       -> TestMPSActivationKernels
+- Reductions (mean, sum, max, min)                              -> TestMPSReductionKernels
 """
 
+import math
 import unittest
 import numpy as np
 
@@ -118,11 +123,12 @@ class TestMPSElementwiseKernels(unittest.TestCase):
         shape = [2, 3]
         x_np = np.random.randn(*shape).astype(np.float32)
         scalar = 5.0
-        
+
         # Paddle
         x_paddle = paddle.to_tensor(x_np, place=self.device)
-        result_paddle = paddle.add(x_paddle, scalar)
-        
+        y_paddle = paddle.to_tensor(scalar, place=self.device)
+        result_paddle = paddle.add(x_paddle, y_paddle)
+
         # Reference
         if self.use_torch_ref:
             x_torch = torch.tensor(x_np, device=self.torch_device)
@@ -349,16 +355,305 @@ class TestMPSElementwiseKernels(unittest.TestCase):
             self.assert_allclose(result_paddle, result_np, msg="Chained operations")
 
 
-def run_tests():
-    """Run all tests."""
-    loader = unittest.TestLoader()
-    suite = loader.loadTestsFromTestCase(TestMPSElementwiseKernels)
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    return result.wasSuccessful()
+# ---------------------------------------------------------------------------
+# Shared helpers for the activation / reduction tests below.
+# ---------------------------------------------------------------------------
+
+
+def _mps_available():
+    return (
+        PADDLE_AVAILABLE
+        and paddle.is_compiled_with_mps()
+        and paddle.mps.is_available()
+    )
+
+
+class _MPSKernelTestBase(unittest.TestCase):
+    """Common setUp for MPS kernel tests — compares MPS vs NumPy and MPS vs CPU."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not _mps_available():
+            raise unittest.SkipTest(
+                "PaddlePaddle is not built with MPS or MPS is unavailable"
+            )
+        paddle.disable_static()
+        paddle.mps.set_device(0)
+
+    def setUp(self):
+        np.random.seed(2026)
+
+
+# ---------------------------------------------------------------------------
+# Activation kernels: softmax, gelu, leaky_relu.
+# ---------------------------------------------------------------------------
+
+
+def _softmax_numpy(x, axis):
+    x_shift = x - np.max(x, axis=axis, keepdims=True)
+    ex = np.exp(x_shift)
+    return ex / np.sum(ex, axis=axis, keepdims=True)
+
+
+def _gelu_exact_numpy(x):
+    from math import erf
+
+    erf_vec = np.vectorize(erf, otypes=[np.float64])
+    return (0.5 * x * (1.0 + erf_vec(x / math.sqrt(2.0)))).astype(x.dtype)
+
+
+def _gelu_approx_numpy(x):
+    beta = math.sqrt(2.0 / math.pi)
+    inner = beta * (x + 0.044715 * np.power(x, 3))
+    return (0.5 * x * (1.0 + np.tanh(inner))).astype(x.dtype)
+
+
+def _leaky_relu_numpy(x, alpha):
+    return np.where(x >= 0, x, alpha * x).astype(x.dtype)
+
+
+class TestMPSActivationKernels(_MPSKernelTestBase):
+    """MPS coverage for softmax, gelu, leaky_relu."""
+
+    # ---- softmax --------------------------------------------------------
+    def _softmax_check(self, x_np, axis, rtol=1e-4, atol=1e-5):
+        import paddle.nn.functional as F
+        out_mps = F.softmax(paddle.to_tensor(x_np, place="mps"), axis=axis).numpy()
+        out_cpu = F.softmax(paddle.to_tensor(x_np, place="cpu"), axis=axis).numpy()
+        ref = _softmax_numpy(x_np, axis)
+        np.testing.assert_allclose(out_mps, ref, rtol=rtol, atol=atol)
+        np.testing.assert_allclose(out_mps, out_cpu, rtol=rtol, atol=atol)
+
+    def test_softmax_shapes_and_axes(self):
+        for shape in [(7,), (3, 4), (2, 3, 5), (2, 3, 4, 5)]:
+            x = np.random.randn(*shape).astype(np.float32)
+            for axis in (-1, 0):
+                with self.subTest(shape=shape, axis=axis):
+                    self._softmax_check(x, axis)
+
+    def test_softmax_middle_and_negative_axes(self):
+        x = np.random.randn(2, 3, 4, 5).astype(np.float32)
+        for axis in [1, 2, -1, -2, -3, -4]:
+            with self.subTest(axis=axis):
+                self._softmax_check(x, axis)
+
+    def test_softmax_sums_to_one(self):
+        import paddle.nn.functional as F
+        x = np.random.randn(5, 8).astype(np.float32)
+        out = F.softmax(paddle.to_tensor(x, place="mps"), axis=-1).numpy()
+        np.testing.assert_allclose(
+            out.sum(axis=-1), np.ones(out.shape[0], dtype=np.float32),
+            rtol=1e-4, atol=1e-5,
+        )
+
+    def test_softmax_numerical_stability(self):
+        # Large magnitudes must not overflow; softmax subtracts the row-max.
+        import paddle.nn.functional as F
+        x = np.array(
+            [[1000.0, 1000.0, 1000.0], [-1000.0, -1000.0, 0.0]],
+            dtype=np.float32,
+        )
+        out = F.softmax(paddle.to_tensor(x, place="mps"), axis=-1).numpy()
+        self.assertFalse(np.any(np.isnan(out)))
+        self.assertFalse(np.any(np.isinf(out)))
+        np.testing.assert_allclose(out.sum(axis=-1), [1.0, 1.0], rtol=1e-5, atol=1e-6)
+
+    def test_softmax_dtype_and_place(self):
+        import paddle.nn.functional as F
+        x = np.random.randn(3, 4).astype(np.float32)
+        out = F.softmax(paddle.to_tensor(x, place="mps"), axis=-1)
+        self.assertEqual(out.dtype, paddle.float32)
+        self.assertTrue("mps" in str(out.place).lower())
+
+    # ---- gelu -----------------------------------------------------------
+    def _gelu_check(self, x_np, approximate, rtol=1e-4, atol=1e-5):
+        import paddle.nn.functional as F
+        ref = _gelu_approx_numpy(x_np) if approximate else _gelu_exact_numpy(x_np)
+        out_mps = F.gelu(
+            paddle.to_tensor(x_np, place="mps"), approximate=approximate
+        ).numpy()
+        out_cpu = F.gelu(
+            paddle.to_tensor(x_np, place="cpu"), approximate=approximate
+        ).numpy()
+        np.testing.assert_allclose(out_mps, ref, rtol=rtol, atol=atol)
+        np.testing.assert_allclose(out_mps, out_cpu, rtol=rtol, atol=atol)
+
+    def test_gelu_shapes_both_branches(self):
+        for shape in [(8,), (3, 4), (2, 3, 5), (2, 3, 4, 5)]:
+            x = np.random.randn(*shape).astype(np.float32) * 2.0
+            for approximate in (False, True):
+                with self.subTest(shape=shape, approximate=approximate):
+                    self._gelu_check(x, approximate)
+
+    def test_gelu_zero_in_zero_out(self):
+        import paddle.nn.functional as F
+        x = np.zeros((4, 5), dtype=np.float32)
+        for approximate in (False, True):
+            with self.subTest(approximate=approximate):
+                out = F.gelu(
+                    paddle.to_tensor(x, place="mps"), approximate=approximate
+                ).numpy()
+                np.testing.assert_allclose(out, np.zeros_like(x), atol=1e-6)
+
+    def test_gelu_saturates_at_extremes(self):
+        import paddle.nn.functional as F
+        x = np.array([10.0, -10.0], dtype=np.float32)
+        for approximate in (False, True):
+            with self.subTest(approximate=approximate):
+                out = F.gelu(
+                    paddle.to_tensor(x, place="mps"), approximate=approximate
+                ).numpy()
+                np.testing.assert_allclose(out, [10.0, 0.0], rtol=1e-4, atol=1e-3)
+
+    def test_gelu_dtype_and_place(self):
+        import paddle.nn.functional as F
+        x = np.random.randn(3, 4).astype(np.float32)
+        out = F.gelu(paddle.to_tensor(x, place="mps"))
+        self.assertEqual(out.dtype, paddle.float32)
+        self.assertTrue("mps" in str(out.place).lower())
+
+    # ---- leaky_relu -----------------------------------------------------
+    def _leaky_relu_check(self, x_np, alpha, rtol=1e-5, atol=1e-6):
+        import paddle.nn.functional as F
+        ref = _leaky_relu_numpy(x_np, alpha)
+        out_mps = F.leaky_relu(
+            paddle.to_tensor(x_np, place="mps"), negative_slope=alpha
+        ).numpy()
+        out_cpu = F.leaky_relu(
+            paddle.to_tensor(x_np, place="cpu"), negative_slope=alpha
+        ).numpy()
+        np.testing.assert_allclose(out_mps, ref, rtol=rtol, atol=atol)
+        np.testing.assert_allclose(out_mps, out_cpu, rtol=rtol, atol=atol)
+
+    def test_leaky_relu_shapes_default_slope(self):
+        for shape in [(7,), (3, 4), (2, 3, 5), (2, 3, 4, 5)]:
+            with self.subTest(shape=shape):
+                self._leaky_relu_check(np.random.randn(*shape).astype(np.float32), 0.01)
+
+    def test_leaky_relu_various_alphas(self):
+        x = np.random.randn(5, 6).astype(np.float32)
+        for alpha in [0.0, 0.01, 0.1, 0.2, 0.5, 1.0]:
+            with self.subTest(alpha=alpha):
+                self._leaky_relu_check(x, alpha)
+
+    def test_leaky_relu_alpha_zero_is_relu(self):
+        import paddle.nn.functional as F
+        x = np.random.randn(4, 5).astype(np.float32)
+        out = F.leaky_relu(
+            paddle.to_tensor(x, place="mps"), negative_slope=0.0
+        ).numpy()
+        np.testing.assert_allclose(out, np.maximum(x, 0.0), rtol=1e-6, atol=1e-7)
+
+    def test_leaky_relu_known_values(self):
+        import paddle.nn.functional as F
+        x = np.array([-2.0, -1.0, 0.0, 1.0, 2.0], dtype=np.float32)
+        out = F.leaky_relu(
+            paddle.to_tensor(x, place="mps"), negative_slope=0.1
+        ).numpy()
+        np.testing.assert_allclose(
+            out, np.array([-0.2, -0.1, 0.0, 1.0, 2.0], dtype=np.float32),
+            rtol=1e-5, atol=1e-6,
+        )
+
+    def test_leaky_relu_dtype_and_place(self):
+        import paddle.nn.functional as F
+        x = np.random.randn(3, 4).astype(np.float32)
+        out = F.leaky_relu(paddle.to_tensor(x, place="mps"))
+        self.assertEqual(out.dtype, paddle.float32)
+        self.assertTrue("mps" in str(out.place).lower())
+
+
+# ---------------------------------------------------------------------------
+# Reduction kernels: mean, sum, max, min.
+# ---------------------------------------------------------------------------
+
+
+class TestMPSReductionKernels(_MPSKernelTestBase):
+    """MPS coverage for paddle.mean / sum / max / min."""
+
+    # Each op tuple: (paddle fn, numpy fn, default tolerances)
+    _OPS = (
+        ("mean", lambda x, **kw: paddle.mean(x, **kw), np.mean, (1e-4, 1e-5)),
+        ("sum",  lambda x, **kw: paddle.sum(x,  **kw), np.sum,  (1e-4, 1e-4)),
+        ("max",  lambda x, **kw: paddle.max(x,  **kw), np.max,  (1e-5, 1e-6)),
+        ("min",  lambda x, **kw: paddle.min(x,  **kw), np.min,  (1e-5, 1e-6)),
+    )
+
+    @staticmethod
+    def _np_axis(axis):
+        return tuple(axis) if isinstance(axis, list) else axis
+
+    def _reduce_check(self, name, paddle_op, numpy_op, x_np, axis, keepdim, tols):
+        kwargs = dict(axis=axis, keepdim=keepdim)
+        out_mps = paddle_op(paddle.to_tensor(x_np, place="mps"), **kwargs).numpy()
+        out_cpu = paddle_op(paddle.to_tensor(x_np, place="cpu"), **kwargs).numpy()
+        ref = numpy_op(x_np, axis=self._np_axis(axis), keepdims=keepdim).astype(np.float32)
+        rtol, atol = tols
+        np.testing.assert_allclose(out_mps, ref, rtol=rtol, atol=atol,
+                                   err_msg=f"{name} vs numpy (axis={axis}, keepdim={keepdim})")
+        np.testing.assert_allclose(out_mps, out_cpu, rtol=rtol, atol=atol,
+                                   err_msg=f"{name} vs cpu (axis={axis}, keepdim={keepdim})")
+        self.assertEqual(out_mps.shape, ref.shape,
+                         f"{name} shape mismatch (axis={axis}, keepdim={keepdim})")
+
+    def test_reduce_all_default(self):
+        for shape in [(7,), (3, 4), (2, 3, 5), (2, 3, 4, 5)]:
+            x = np.random.randn(*shape).astype(np.float32)
+            for name, p_op, n_op, tols in self._OPS:
+                for keepdim in (False, True):
+                    with self.subTest(op=name, shape=shape, keepdim=keepdim):
+                        self._reduce_check(name, p_op, n_op, x,
+                                           axis=None, keepdim=keepdim, tols=tols)
+
+    def test_single_axis(self):
+        x = np.random.randn(2, 3, 4, 5).astype(np.float32)
+        for name, p_op, n_op, tols in self._OPS:
+            for axis in [0, 1, 2, 3, -1, -2]:
+                for keepdim in (False, True):
+                    with self.subTest(op=name, axis=axis, keepdim=keepdim):
+                        self._reduce_check(name, p_op, n_op, x,
+                                           axis=axis, keepdim=keepdim, tols=tols)
+
+    def test_multiple_axes(self):
+        x = np.random.randn(2, 3, 4, 5).astype(np.float32)
+        axes_sets = [[0, 1], [2, 3], [0, 3], [1, 2, 3]]
+        for name, p_op, n_op, tols in self._OPS:
+            for axes in axes_sets:
+                for keepdim in (False, True):
+                    with self.subTest(op=name, axes=axes, keepdim=keepdim):
+                        self._reduce_check(name, p_op, n_op, x,
+                                           axis=axes, keepdim=keepdim, tols=tols)
+
+    def test_known_values(self):
+        x = np.array([[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]], dtype=np.float32)
+        # max along axis 1 -> [3.0, 5.0]; min -> [-2.0, -6.0]
+        out = paddle.max(paddle.to_tensor(x, place="mps"), axis=1).numpy()
+        np.testing.assert_allclose(out, [3.0, 5.0])
+        out = paddle.min(paddle.to_tensor(x, place="mps"), axis=1).numpy()
+        np.testing.assert_allclose(out, [-2.0, -6.0])
+        # sum-of-all -> -3.0; mean -> -0.5
+        out = paddle.sum(paddle.to_tensor(x, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.float32(-3.0), atol=1e-5)
+        out = paddle.mean(paddle.to_tensor(x, place="mps")).numpy()
+        np.testing.assert_allclose(out, np.float32(-0.5), atol=1e-6)
+
+    def test_constant_input(self):
+        x = np.full((3, 4, 5), 2.5, dtype=np.float32)
+        for name, p_op, _, _ in self._OPS:
+            with self.subTest(op=name):
+                out = p_op(paddle.to_tensor(x, place="mps")).numpy()
+                expected = 2.5 if name in ("mean", "max", "min") else 2.5 * x.size
+                np.testing.assert_allclose(out, np.float32(expected), rtol=1e-5, atol=1e-5)
+
+    def test_dtype_and_place_preserved(self):
+        x = np.random.randn(3, 4).astype(np.float32)
+        for name, p_op, _, _ in self._OPS:
+            with self.subTest(op=name):
+                out = p_op(paddle.to_tensor(x, place="mps"), axis=-1)
+                self.assertEqual(out.dtype, paddle.float32)
+                self.assertTrue("mps" in str(out.place).lower())
 
 
 if __name__ == '__main__':
-    success = run_tests()
-    exit(0 if success else 1)
+    unittest.main(verbosity=2)
 
