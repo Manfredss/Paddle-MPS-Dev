@@ -753,6 +753,122 @@ class TestMPSLogicalKernels(_MPSKernelTestBase):
         self.assertTrue("mps" in str(out.place).lower())
 
 
+# ---------------------------------------------------------------------------
+# Comparison kernels: equal, not_equal, less_than, less_equal, greater_than,
+# greater_equal. Float32 inputs, bool output.
+# ---------------------------------------------------------------------------
+
+
+class TestMPSComparisonKernels(_MPSKernelTestBase):
+    """MPS coverage for paddle.equal / not_equal / less_than / less_equal /
+    greater_than / greater_equal."""
+
+    _OPS = (
+        ("equal",         lambda a, b: paddle.equal(a, b),         np.equal),
+        ("not_equal",     lambda a, b: paddle.not_equal(a, b),     np.not_equal),
+        ("less_than",     lambda a, b: paddle.less_than(a, b),     np.less),
+        ("less_equal",    lambda a, b: paddle.less_equal(a, b),    np.less_equal),
+        ("greater_than",  lambda a, b: paddle.greater_than(a, b),  np.greater),
+        ("greater_equal", lambda a, b: paddle.greater_equal(a, b), np.greater_equal),
+    )
+
+    def _check(self, name, paddle_op, numpy_op, x_np, y_np):
+        out_mps = paddle_op(
+            paddle.to_tensor(x_np, place="mps"),
+            paddle.to_tensor(y_np, place="mps"),
+        ).numpy()
+        out_cpu = paddle_op(
+            paddle.to_tensor(x_np, place="cpu"),
+            paddle.to_tensor(y_np, place="cpu"),
+        ).numpy()
+        ref = numpy_op(x_np, y_np)
+        np.testing.assert_array_equal(out_mps, ref, err_msg=f"{name} vs numpy")
+        np.testing.assert_array_equal(out_mps, out_cpu, err_msg=f"{name} vs cpu")
+        self.assertEqual(out_mps.dtype, np.bool_,
+                         f"{name} output dtype must be bool")
+
+    def test_shapes(self):
+        for shape in [(7,), (3, 4), (2, 3, 5), (2, 3, 4, 5)]:
+            x = np.random.randn(*shape).astype(np.float32)
+            y = np.random.randn(*shape).astype(np.float32)
+            for name, p_op, n_op in self._OPS:
+                with self.subTest(op=name, shape=shape):
+                    self._check(name, p_op, n_op, x, y)
+
+    def test_overlapping_values(self):
+        # Force a mix of <, ==, > by sharing some entries between x and y.
+        x = np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32)
+        y = np.array([2.0, 2.0, 2.0, 4.0, 4.0], dtype=np.float32)
+        for name, p_op, n_op in self._OPS:
+            with self.subTest(op=name):
+                self._check(name, p_op, n_op, x, y)
+
+    def test_known_truth_table(self):
+        # Hand-rolled expected values, exercising each comparison's edge.
+        x = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+        y = np.array([2.0, 2.0, 2.0], dtype=np.float32)
+        expected = {
+            "equal":         [False, True, False],
+            "not_equal":     [True, False, True],
+            "less_than":     [True, False, False],
+            "less_equal":    [True, True, False],
+            "greater_than":  [False, False, True],
+            "greater_equal": [False, True, True],
+        }
+        for name, p_op, _ in self._OPS:
+            with self.subTest(op=name):
+                out = p_op(
+                    paddle.to_tensor(x, place="mps"),
+                    paddle.to_tensor(y, place="mps"),
+                ).numpy()
+                np.testing.assert_array_equal(
+                    out, np.array(expected[name], dtype=np.bool_)
+                )
+
+    def test_equal_reflexive(self):
+        # equal(x, x) is all-True; not_equal(x, x) is all-False.
+        x = np.random.randn(4, 5).astype(np.float32)
+        x_p = paddle.to_tensor(x, place="mps")
+        np.testing.assert_array_equal(
+            paddle.equal(x_p, x_p).numpy(), np.ones_like(x, dtype=np.bool_)
+        )
+        np.testing.assert_array_equal(
+            paddle.not_equal(x_p, x_p).numpy(), np.zeros_like(x, dtype=np.bool_)
+        )
+
+    def test_complementary_pairs(self):
+        # equal/not_equal, less_than/greater_equal, greater_than/less_equal are
+        # logical complements of each other.
+        x = np.random.randn(4, 5).astype(np.float32)
+        y = np.random.randn(4, 5).astype(np.float32)
+        x_p = paddle.to_tensor(x, place="mps")
+        y_p = paddle.to_tensor(y, place="mps")
+        np.testing.assert_array_equal(
+            paddle.equal(x_p, y_p).numpy(),
+            np.logical_not(paddle.not_equal(x_p, y_p).numpy()),
+        )
+        np.testing.assert_array_equal(
+            paddle.less_than(x_p, y_p).numpy(),
+            np.logical_not(paddle.greater_equal(x_p, y_p).numpy()),
+        )
+        np.testing.assert_array_equal(
+            paddle.greater_than(x_p, y_p).numpy(),
+            np.logical_not(paddle.less_equal(x_p, y_p).numpy()),
+        )
+
+    def test_output_dtype_and_place(self):
+        x = np.random.randn(3, 4).astype(np.float32)
+        y = np.random.randn(3, 4).astype(np.float32)
+        for name, p_op, _ in self._OPS:
+            with self.subTest(op=name):
+                out = p_op(
+                    paddle.to_tensor(x, place="mps"),
+                    paddle.to_tensor(y, place="mps"),
+                )
+                self.assertEqual(out.dtype, paddle.bool)
+                self.assertTrue("mps" in str(out.place).lower())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
 
