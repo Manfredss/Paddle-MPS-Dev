@@ -654,6 +654,105 @@ class TestMPSReductionKernels(_MPSKernelTestBase):
                 self.assertTrue("mps" in str(out.place).lower())
 
 
+# ---------------------------------------------------------------------------
+# Logical kernels: logical_and, logical_or, logical_not, logical_xor.
+# Inputs and outputs are all bool tensors.
+# ---------------------------------------------------------------------------
+
+
+class TestMPSLogicalKernels(_MPSKernelTestBase):
+    """MPS coverage for paddle.logical_and / or / not / xor."""
+
+    def _rand_bool(self, shape):
+        return np.random.randint(0, 2, size=shape).astype(np.bool_)
+
+    def _binary_check(self, name, paddle_op, numpy_op, x_np, y_np):
+        out_mps = paddle_op(
+            paddle.to_tensor(x_np, place="mps"),
+            paddle.to_tensor(y_np, place="mps"),
+        ).numpy()
+        out_cpu = paddle_op(
+            paddle.to_tensor(x_np, place="cpu"),
+            paddle.to_tensor(y_np, place="cpu"),
+        ).numpy()
+        ref = numpy_op(x_np, y_np)
+        np.testing.assert_array_equal(out_mps, ref,
+                                      err_msg=f"{name} vs numpy")
+        np.testing.assert_array_equal(out_mps, out_cpu,
+                                      err_msg=f"{name} vs cpu")
+        self.assertEqual(out_mps.dtype, np.bool_,
+                         f"{name} output dtype must be bool")
+
+    def _unary_check(self, x_np):
+        out_mps = paddle.logical_not(paddle.to_tensor(x_np, place="mps")).numpy()
+        out_cpu = paddle.logical_not(paddle.to_tensor(x_np, place="cpu")).numpy()
+        ref = np.logical_not(x_np)
+        np.testing.assert_array_equal(out_mps, ref, err_msg="logical_not vs numpy")
+        np.testing.assert_array_equal(out_mps, out_cpu, err_msg="logical_not vs cpu")
+        self.assertEqual(out_mps.dtype, np.bool_)
+
+    _BINARY_OPS = (
+        ("logical_and", lambda a, b: paddle.logical_and(a, b), np.logical_and),
+        ("logical_or",  lambda a, b: paddle.logical_or(a, b),  np.logical_or),
+        ("logical_xor", lambda a, b: paddle.logical_xor(a, b), np.logical_xor),
+    )
+
+    def test_binary_truth_tables(self):
+        # All 4 combinations of two bool inputs.
+        x = np.array([False, False, True, True], dtype=np.bool_)
+        y = np.array([False, True, False, True], dtype=np.bool_)
+        for name, p_op, n_op in self._BINARY_OPS:
+            with self.subTest(op=name):
+                self._binary_check(name, p_op, n_op, x, y)
+
+    def test_binary_shapes(self):
+        for shape in [(7,), (3, 4), (2, 3, 5), (2, 3, 4, 5)]:
+            x = self._rand_bool(shape)
+            y = self._rand_bool(shape)
+            for name, p_op, n_op in self._BINARY_OPS:
+                with self.subTest(op=name, shape=shape):
+                    self._binary_check(name, p_op, n_op, x, y)
+
+    def test_not_truth_table(self):
+        self._unary_check(np.array([False, True], dtype=np.bool_))
+
+    def test_not_shapes(self):
+        for shape in [(7,), (3, 4), (2, 3, 5), (2, 3, 4, 5)]:
+            with self.subTest(shape=shape):
+                self._unary_check(self._rand_bool(shape))
+
+    def test_de_morgan_identity(self):
+        # not(a or b) == (not a) and (not b)
+        a = self._rand_bool((4, 5))
+        b = self._rand_bool((4, 5))
+        a_p = paddle.to_tensor(a, place="mps")
+        b_p = paddle.to_tensor(b, place="mps")
+        lhs = paddle.logical_not(paddle.logical_or(a_p, b_p)).numpy()
+        rhs = paddle.logical_and(
+            paddle.logical_not(a_p), paddle.logical_not(b_p)
+        ).numpy()
+        np.testing.assert_array_equal(lhs, rhs)
+
+    def test_self_xor_is_false(self):
+        a = self._rand_bool((3, 4, 5))
+        a_p = paddle.to_tensor(a, place="mps")
+        out = paddle.logical_xor(a_p, a_p).numpy()
+        np.testing.assert_array_equal(out, np.zeros_like(a, dtype=np.bool_))
+
+    def test_output_dtype_and_place(self):
+        a = self._rand_bool((3, 4))
+        b = self._rand_bool((3, 4))
+        for name, p_op, _ in self._BINARY_OPS:
+            with self.subTest(op=name):
+                out = p_op(paddle.to_tensor(a, place="mps"),
+                           paddle.to_tensor(b, place="mps"))
+                self.assertEqual(out.dtype, paddle.bool)
+                self.assertTrue("mps" in str(out.place).lower())
+        out = paddle.logical_not(paddle.to_tensor(a, place="mps"))
+        self.assertEqual(out.dtype, paddle.bool)
+        self.assertTrue("mps" in str(out.place).lower())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
 
