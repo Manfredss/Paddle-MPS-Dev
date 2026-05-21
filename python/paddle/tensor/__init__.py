@@ -513,6 +513,7 @@ ge = greater_equal
 sub = subtract
 sub_ = subtract_
 clamp_ = clip_
+movedim = moveaxis
 
 # this list used in math_op_patch.py for _binary_creator_
 tensor_method_func = [
@@ -844,6 +845,7 @@ tensor_method_func = [
     'erfinv_',
     'angle',
     'moveaxis',
+    'movedim',
     'repeat_interleave',
     'take_along_axis',
     'take_along_dim',
