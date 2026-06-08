@@ -586,6 +586,10 @@ from .tensor.math import (  # noqa: F401
     add_n,
     addmm,
     addmm_,
+    addmv,
+    addmv_,
+    addr,
+    addr_,
     all,
     amax,
     amin,
@@ -642,7 +646,6 @@ from .tensor.math import (  # noqa: F401
     floor,
     floor_divide,
     floor_divide_,
-    floor_mod,
     fmax,
     fmin,
     frac,
@@ -657,6 +660,7 @@ from .tensor.math import (  # noqa: F401
     gcd,
     gcd_,
     heaviside,
+    histc,
     hypot,
     hypot_,
     i0,
@@ -700,7 +704,6 @@ from .tensor.math import (  # noqa: F401
     min,
     minimum,
     mm,
-    mod,
     mul,
     multigammaln,
     multigammaln_,
@@ -1058,6 +1061,13 @@ manual_seed = seed
 sub = subtract
 sub_ = subtract_
 movedim = moveaxis
+mod = remainder
+floor_mod = remainder
+fix = trunc
+fix_ = trunc_
+mvlgamma = multigammaln
+mvlgamma_ = multigammaln_
+negative_ = neg_
 
 __all__ = [
     'block_diag',
@@ -1092,6 +1102,10 @@ __all__ = [
     'raw',
     'addmm',
     'addmm_',
+    'addmv',
+    'addmv_',
+    'addr',
+    'addr_',
     'baddbmm',
     'baddbmm_',
     'allclose',
@@ -1249,6 +1263,7 @@ __all__ = [
     'histogram_bin_edges',
     'histogram',
     'histogramdd',
+    'histc',
     'multiplex',
     'CUDAPlace',
     'empty',
@@ -1323,6 +1338,7 @@ __all__ = [
     'neg',
     'neg_',
     'negative',
+    'negative_',
     'lgamma',
     'lgamma_',
     'gammaincc',
@@ -1463,6 +1479,8 @@ __all__ = [
     'check_shape',
     'trunc',
     'trunc_',
+    'fix',
+    'fix_',
     'frac',
     'frac_',
     'digamma',
@@ -1499,6 +1517,8 @@ __all__ = [
     'select_scatter',
     'multigammaln',
     'multigammaln_',
+    'mvlgamma',
+    'mvlgamma_',
     'nan_to_num',
     'nan_to_num_',
     'scatter_add_',
