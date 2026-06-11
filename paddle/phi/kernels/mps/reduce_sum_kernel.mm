@@ -21,7 +21,9 @@ limitations under the License. */
 
 #include "glog/logging.h"
 #include "paddle/phi/backends/mps/mps_context.h"
+#include "paddle/phi/common/bfloat16.h"
 #include "paddle/phi/common/data_type.h"
+#include "paddle/phi/common/float16.h"
 #include "paddle/phi/core/enforce.h"
 #include "paddle/phi/core/kernel_registry.h"
 #include "paddle/phi/core/kernel_utils.h"
@@ -96,7 +98,7 @@ void SumKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
 
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     if (x_buffer == nil) {
@@ -111,7 +113,7 @@ void SumKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
@@ -142,7 +144,11 @@ void SumKernel(const Context& dev_ctx,
                DataType out_dtype,
                bool keep_dim,
                DenseTensor* out) {
-  // The MPS sum kernel only supports same-dtype reductions (float -> float).
+  // The MPS sum kernel supports same-dtype reductions for the registered
+  // dtypes: float, float16, bfloat16 (macOS 14+), int32, and int64. For the
+  // integer dtypes, MPSGraph's reductionSumWithTensor accumulates in the input
+  // integer width and preserves Paddle's two's-complement wrap-around
+  // semantics, matching the CPU/GPU backends (no float intermediate).
   // out_dtype is allowed to be UNDEFINED (meaning "same as input") or equal
   // to the input dtype; otherwise we bail out because we don't implement cast.
   if (out_dtype != DataType::UNDEFINED && out_dtype != x.dtype()) {
@@ -169,10 +175,26 @@ void SumKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(sum,
                    MPS,
                    ALL_LAYOUT,
                    phi::SumKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   int32_t,
+                   int64_t,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(sum,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::SumKernel,
+                   float,
+                   phi::dtype::float16,
+                   int32_t,
+                   int64_t) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS

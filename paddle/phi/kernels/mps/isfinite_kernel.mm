@@ -16,6 +16,9 @@ limitations under the License. */
 
 #include "paddle/phi/kernels/isfinite_kernel.h"
 
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
+
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
@@ -93,7 +96,7 @@ void IsfiniteCheckKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
@@ -177,11 +180,15 @@ void IsfiniteKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(isnan,
                    MPS,
                    ALL_LAYOUT,
                    phi::IsnanKernel,
-                   float) {
+                   float,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16) {
   kernel->OutputAt(0).SetDataType(phi::DataType::BOOL);
 }
 
@@ -189,7 +196,9 @@ PD_REGISTER_KERNEL(isinf,
                    MPS,
                    ALL_LAYOUT,
                    phi::IsinfKernel,
-                   float) {
+                   float,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16) {
   kernel->OutputAt(0).SetDataType(phi::DataType::BOOL);
 }
 
@@ -197,8 +206,38 @@ PD_REGISTER_KERNEL(isfinite,
                    MPS,
                    ALL_LAYOUT,
                    phi::IsfiniteKernel,
-                   float) {
+                   float,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16) {
   kernel->OutputAt(0).SetDataType(phi::DataType::BOOL);
 }
+#else
+PD_REGISTER_KERNEL(isnan,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::IsnanKernel,
+                   float,
+                   phi::dtype::float16) {
+  kernel->OutputAt(0).SetDataType(phi::DataType::BOOL);
+}
+
+PD_REGISTER_KERNEL(isinf,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::IsinfKernel,
+                   float,
+                   phi::dtype::float16) {
+  kernel->OutputAt(0).SetDataType(phi::DataType::BOOL);
+}
+
+PD_REGISTER_KERNEL(isfinite,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::IsfiniteKernel,
+                   float,
+                   phi::dtype::float16) {
+  kernel->OutputAt(0).SetDataType(phi::DataType::BOOL);
+}
+#endif
 
 #endif  // PADDLE_WITH_MPS

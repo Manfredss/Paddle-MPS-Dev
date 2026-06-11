@@ -16,6 +16,10 @@ limitations under the License. */
 
 #include "paddle/phi/kernels/elementwise_add_kernel.h"
 
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/complex.h"
+#include "paddle/phi/common/float16.h"
+
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
@@ -35,21 +39,21 @@ void AddKernelImpl(const MPSContext& dev_ctx,
   @autoreleasepool {
     // Get MPSGraph
     MPSGraph* graph = backends::mps::GetMPSGraph(dev_ctx);
-    
+
     // Create input tensors
     MPSGraphTensor* x_tensor = backends::mps::CreateMPSGraphTensorWithShape(
         graph, x, "x");
     MPSGraphTensor* y_tensor = backends::mps::CreateMPSGraphTensorWithShape(
         graph, y, "y");
-    
+
     // Perform addition using MPSGraph
     MPSGraphTensor* result_tensor = [graph additionWithPrimaryTensor:x_tensor
                                                       secondaryTensor:y_tensor
                                                                  name:@"add_result"];
-    
+
     // Allocate output
     dev_ctx.template Alloc<T>(out);
-    
+
     // Create output tensor data
     id<MTLBuffer> out_buffer = backends::mps::GetMTLBuffer(*out);
     if (out_buffer == nil) {
@@ -60,27 +64,27 @@ void AddKernelImpl(const MPSContext& dev_ctx,
       // In production, we should ensure all MPS tensors use Metal buffers
       return;
     }
-    
+
     auto out_dims = out->dims();
     NSMutableArray<NSNumber*>* out_shape = [NSMutableArray arrayWithCapacity:out_dims.size()];
     for (int i = 0; i < out_dims.size(); ++i) {
       [out_shape addObject:@(out_dims[i])];
     }
-    
+
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
-    
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
+
     // Create input tensor data
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     id<MTLBuffer> y_buffer = backends::mps::GetMTLBuffer(y);
-    
+
     if (x_buffer == nil || y_buffer == nil) {
       VLOG(3) << "Input buffers not available, using CPU fallback for add";
       return;
     }
-    
+
     // Get shapes
     auto x_dims = x.dims();
     auto y_dims = y.dims();
@@ -92,31 +96,31 @@ void AddKernelImpl(const MPSContext& dev_ctx,
     for (int i = 0; i < y_dims.size(); ++i) {
       [y_shape addObject:@(y_dims[i])];
     }
-    
+
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensorData* y_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:y_buffer
                     shape:y_shape
-                 dataType:MPSDataTypeFloat32];
-    
+                 dataType:backends::mps::GetMPSDataType(y.dtype())];
+
     // Create feeds dictionary
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data,
       y_tensor: y_data
     };
-    
+
     // Create results dictionary
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
       result_tensor: out_data
     };
-    
+
     // Get device and command queue
     id<MTLDevice> device = (__bridge id<MTLDevice>)dev_ctx.device();
     id<MTLCommandQueue> commandQueue = [device newCommandQueue];
-    
+
     // Execute graph using the correct MPSGraph API
     if (@available(macOS 12.0, *)) {
       // Use runWithMTLCommandQueue:feeds:targetOperations:resultsDictionary:
@@ -141,7 +145,7 @@ void AddKernel(const Context& dev_ctx,
     dev_ctx.template Alloc<T>(out);
     return;
   }
-  
+
   const auto* mps_ctx = dynamic_cast<const MPSContext*>(&dev_ctx);
   if (mps_ctx != nullptr) {
     AddKernelImpl<T>(*mps_ctx, x, y, out);
@@ -153,11 +157,27 @@ void AddKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(add,
                    MPS,
                    ALL_LAYOUT,
                    phi::AddKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   int,
+                   int64_t,
+                   phi::dtype::bfloat16,
+                   phi::dtype::complex64) {}
+#else
+PD_REGISTER_KERNEL(add,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::AddKernel,
+                   float,
+                   phi::dtype::float16,
+                   int,
+                   int64_t) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS
-

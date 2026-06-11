@@ -19,10 +19,10 @@ limitations under the License. */
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
-#include <type_traits>
-
 #include "glog/logging.h"
 #include "paddle/phi/backends/mps/mps_context.h"
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
 #include "paddle/phi/core/enforce.h"
 #include "paddle/phi/core/kernel_registry.h"
 #include "paddle/phi/kernels/mps/mps_utils.h"
@@ -34,12 +34,6 @@ void HeavisideKernelImpl(const MPSContext& dev_ctx,
                          const DenseTensor& x,
                          const DenseTensor& y,
                          DenseTensor* out) {
-  // The MPSGraph constants and MPSGraphTensorData objects below hardcode
-  // MPSDataTypeFloat32, so this kernel must only be instantiated for float.
-  // Revisit if more types are ever registered.
-  static_assert(
-      std::is_same<T, float>::value,
-      "HeavisideKernelImpl only supports float (MPSDataTypeFloat32).");
   @autoreleasepool {
     MPSGraph* graph = backends::mps::GetMPSGraph(dev_ctx);
 
@@ -54,7 +48,7 @@ void HeavisideKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensor* zero_tensor =
         [graph constantWithScalar:0.0f
                             shape:@[@1]
-                         dataType:MPSDataTypeFloat32];
+                         dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensor* x_eq_zero =
         [graph equalWithPrimaryTensor:x_tensor
                       secondaryTensor:zero_tensor
@@ -63,9 +57,10 @@ void HeavisideKernelImpl(const MPSContext& dev_ctx,
         [graph greaterThanWithPrimaryTensor:x_tensor
                             secondaryTensor:zero_tensor
                                        name:@"heaviside_x_gt_zero"];
-    MPSGraphTensor* step_tensor = [graph castTensor:x_gt_zero
-                                             toType:MPSDataTypeFloat32
-                                               name:@"heaviside_step"];
+    MPSGraphTensor* step_tensor =
+        [graph castTensor:x_gt_zero
+                   toType:backends::mps::GetMPSDataType(x.dtype())
+                     name:@"heaviside_step"];
     MPSGraphTensor* result_tensor =
         [graph selectWithPredicateTensor:x_eq_zero
                      truePredicateTensor:y_tensor
@@ -89,7 +84,7 @@ void HeavisideKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
 
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     id<MTLBuffer> y_buffer = backends::mps::GetMTLBuffer(y);
@@ -113,11 +108,11 @@ void HeavisideKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensorData* y_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:y_buffer
                     shape:y_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(y.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data,
@@ -163,10 +158,26 @@ void HeavisideKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(heaviside,
                    MPS,
                    ALL_LAYOUT,
                    phi::HeavisideKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   int32_t,
+                   int64_t,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(heaviside,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::HeavisideKernel,
+                   float,
+                   phi::dtype::float16,
+                   int32_t,
+                   int64_t) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS

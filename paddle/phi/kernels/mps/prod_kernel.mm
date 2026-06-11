@@ -23,6 +23,8 @@ limitations under the License. */
 
 #include "glog/logging.h"
 #include "paddle/phi/backends/mps/mps_context.h"
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
 #include "paddle/phi/common/int_array.h"
 #include "paddle/phi/core/enforce.h"
 #include "paddle/phi/core/kernel_registry.h"
@@ -99,7 +101,7 @@ void ProdKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
 
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     if (x_buffer == nil) {
@@ -114,7 +116,7 @@ void ProdKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
@@ -168,10 +170,26 @@ void ProdKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(prod,
                    MPS,
                    ALL_LAYOUT,
                    phi::ProdKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   int32_t,
+                   int64_t,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(prod,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::ProdKernel,
+                   float,
+                   phi::dtype::float16,
+                   int32_t,
+                   int64_t) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS

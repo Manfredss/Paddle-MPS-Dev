@@ -16,6 +16,9 @@ limitations under the License. */
 
 #include "paddle/phi/kernels/matmul_kernel.h"
 
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
+
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
@@ -36,17 +39,17 @@ void MatmulKernelImpl(const MPSContext& dev_ctx,
                       DenseTensor* out) {
   @autoreleasepool {
     MPSGraph* graph = backends::mps::GetMPSGraph(dev_ctx);
-    
+
     // Get original dimensions
     auto x_dims = x.dims();
     auto y_dims = y.dims();
-    
+
     // Create input placeholders with original shapes
     MPSGraphTensor* x_placeholder = backends::mps::CreateMPSGraphTensorWithShape(
         graph, x, "x");
     MPSGraphTensor* y_placeholder = backends::mps::CreateMPSGraphTensorWithShape(
         graph, y, "y");
-    
+
     // Apply transpose operations to placeholders if needed
     // The transpose creates a new tensor, but we feed data to the original placeholder
     MPSGraphTensor* x_tensor = x_placeholder;
@@ -56,7 +59,7 @@ void MatmulKernelImpl(const MPSContext& dev_ctx,
                            withDimension:x_dims.size() - 1
                                     name:@"transpose_x"];
     }
-    
+
     MPSGraphTensor* y_tensor = y_placeholder;
     if (transpose_y && y_dims.size() >= 2) {
       y_tensor = [graph transposeTensor:y_placeholder
@@ -64,39 +67,39 @@ void MatmulKernelImpl(const MPSContext& dev_ctx,
                            withDimension:y_dims.size() - 1
                                     name:@"transpose_y"];
     }
-    
+
     // Perform matrix multiplication using MPSGraph
     MPSGraphTensor* result_tensor = [graph matrixMultiplicationWithPrimaryTensor:x_tensor
                                                                secondaryTensor:y_tensor
                                                                           name:@"matmul_result"];
-    
+
     dev_ctx.template Alloc<T>(out);
-    
+
     id<MTLBuffer> out_buffer = backends::mps::GetMTLBuffer(*out);
     if (out_buffer == nil) {
       VLOG(3) << "MPS buffer not available, using CPU fallback for matmul";
       return;
     }
-    
+
     auto out_dims = out->dims();
     NSMutableArray<NSNumber*>* out_shape = [NSMutableArray arrayWithCapacity:out_dims.size()];
     for (int i = 0; i < out_dims.size(); ++i) {
       [out_shape addObject:@(out_dims[i])];
     }
-    
+
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
-    
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
+
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     id<MTLBuffer> y_buffer = backends::mps::GetMTLBuffer(y);
-    
+
     if (x_buffer == nil || y_buffer == nil) {
       VLOG(3) << "Input buffers not available, using CPU fallback for matmul";
       return;
     }
-    
+
     // Create tensor data with original shapes (data is in original layout)
     NSMutableArray<NSNumber*>* x_shape = [NSMutableArray arrayWithCapacity:x_dims.size()];
     NSMutableArray<NSNumber*>* y_shape = [NSMutableArray arrayWithCapacity:y_dims.size()];
@@ -106,30 +109,30 @@ void MatmulKernelImpl(const MPSContext& dev_ctx,
     for (int i = 0; i < y_dims.size(); ++i) {
       [y_shape addObject:@(y_dims[i])];
     }
-    
+
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensorData* y_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:y_buffer
                     shape:y_shape
-                 dataType:MPSDataTypeFloat32];
-    
+                 dataType:backends::mps::GetMPSDataType(y.dtype())];
+
     // Map data to original placeholders (not transposed tensors)
     // MPSGraph will handle the transpose operation internally
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_placeholder: x_data,
       y_placeholder: y_data
     };
-    
+
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
       result_tensor: out_data
     };
-    
+
     id<MTLDevice> device = (__bridge id<MTLDevice>)dev_ctx.device();
     id<MTLCommandQueue> commandQueue = [device newCommandQueue];
-    
+
     if (@available(macOS 12.0, *)) {
       [graph runWithMTLCommandQueue:commandQueue
                               feeds:feeds
@@ -153,7 +156,7 @@ void MatmulKernel(const Context& dev_ctx,
     dev_ctx.template Alloc<T>(out);
     return;
   }
-  
+
   const auto* mps_ctx = dynamic_cast<const MPSContext*>(&dev_ctx);
   if (mps_ctx != nullptr) {
     MatmulKernelImpl<T>(*mps_ctx, x, y, transpose_x, transpose_y, out);
@@ -165,10 +168,22 @@ void MatmulKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(matmul,
                    MPS,
                    ALL_LAYOUT,
                    phi::MatmulKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(matmul,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::MatmulKernel,
+                   float,
+                   phi::dtype::float16) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS

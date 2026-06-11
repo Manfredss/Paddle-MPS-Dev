@@ -16,6 +16,9 @@ limitations under the License. */
 
 #include "paddle/phi/kernels/abs_kernel.h"
 
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
+
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
@@ -34,68 +37,68 @@ void AbsKernelImpl(const MPSContext& dev_ctx,
   @autoreleasepool {
     // Get MPSGraph
     MPSGraph* graph = backends::mps::GetMPSGraph(dev_ctx);
-    
+
     // Create input tensor
     MPSGraphTensor* x_tensor = backends::mps::CreateMPSGraphTensorWithShape(
         graph, x, "x");
-    
+
     // Perform absolute value using MPSGraph
     MPSGraphTensor* result_tensor = [graph absoluteWithTensor:x_tensor
                                                          name:@"abs_result"];
-    
+
     // Allocate output
     dev_ctx.template Alloc<T>(out);
-    
+
     // Create output tensor data
     id<MTLBuffer> out_buffer = backends::mps::GetMTLBuffer(*out);
     if (out_buffer == nil) {
       VLOG(3) << "MPS buffer not available, using CPU fallback for abs";
       return;
     }
-    
+
     auto out_dims = out->dims();
     NSMutableArray<NSNumber*>* out_shape = [NSMutableArray arrayWithCapacity:out_dims.size()];
     for (int i = 0; i < out_dims.size(); ++i) {
       [out_shape addObject:@(out_dims[i])];
     }
-    
+
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
-    
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
+
     // Create input tensor data
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     if (x_buffer == nil) {
       VLOG(3) << "Input buffer not available, using CPU fallback for abs";
       return;
     }
-    
+
     auto x_dims = x.dims();
     NSMutableArray<NSNumber*>* x_shape = [NSMutableArray arrayWithCapacity:x_dims.size()];
     for (int i = 0; i < x_dims.size(); ++i) {
       [x_shape addObject:@(x_dims[i])];
     }
-    
+
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
-    
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
+
     // Create feeds dictionary
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
     };
-    
+
     // Create results dictionary
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
       result_tensor: out_data
     };
-    
+
     // Get device and command queue
     id<MTLDevice> device = (__bridge id<MTLDevice>)dev_ctx.device();
     id<MTLCommandQueue> commandQueue = [device newCommandQueue];
-    
+
     // Execute graph using the correct MPSGraph API
     if (@available(macOS 12.0, *)) {
       [graph runWithMTLCommandQueue:commandQueue
@@ -117,7 +120,7 @@ void AbsKernel(const Context& dev_ctx,
     dev_ctx.template Alloc<T>(out);
     return;
   }
-  
+
   const auto* mps_ctx = dynamic_cast<const MPSContext*>(&dev_ctx);
   if (mps_ctx != nullptr) {
     AbsKernelImpl<T>(*mps_ctx, x, out);
@@ -129,11 +132,26 @@ void AbsKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(abs,
                    MPS,
                    ALL_LAYOUT,
                    phi::AbsKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   int,
+                   int64_t,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(abs,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::AbsKernel,
+                   float,
+                   phi::dtype::float16,
+                   int,
+                   int64_t) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS
-

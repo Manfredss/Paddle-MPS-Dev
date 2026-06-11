@@ -16,6 +16,9 @@ limitations under the License. */
 
 #include "paddle/phi/kernels/compare_kernel.h"
 
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
+
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
@@ -48,10 +51,10 @@ void GreaterEqualKernelImpl(const MPSContext& dev_ctx,
     }
 
     MPSGraphTensor* x_tensor = [graph placeholderWithShape:x_shape
-                                                  dataType:MPSDataTypeFloat32
+                                                  dataType:backends::mps::GetMPSDataType(x.dtype())
                                                       name:@"x"];
     MPSGraphTensor* y_tensor = [graph placeholderWithShape:y_shape
-                                                  dataType:MPSDataTypeFloat32
+                                                  dataType:backends::mps::GetMPSDataType(y.dtype())
                                                       name:@"y"];
 
     MPSGraphTensor* result_tensor =
@@ -85,11 +88,11 @@ void GreaterEqualKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensorData* y_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:y_buffer
                     shape:y_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(y.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data,
@@ -134,12 +137,30 @@ void GreaterEqualKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(greater_equal,
                    MPS,
                    ALL_LAYOUT,
                    phi::GreaterEqualKernel,
-                   float) {
+                   float,
+                   phi::dtype::float16,
+                   int32_t,
+                   int64_t,
+                   phi::dtype::bfloat16) {
   kernel->OutputAt(0).SetDataType(phi::DataType::BOOL);
 }
+#else
+PD_REGISTER_KERNEL(greater_equal,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::GreaterEqualKernel,
+                   float,
+                   phi::dtype::float16,
+                   int32_t,
+                   int64_t) {
+  kernel->OutputAt(0).SetDataType(phi::DataType::BOOL);
+}
+#endif
 
 #endif  // PADDLE_WITH_MPS

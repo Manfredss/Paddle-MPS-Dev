@@ -21,6 +21,8 @@ limitations under the License. */
 
 #include "glog/logging.h"
 #include "paddle/phi/backends/mps/mps_context.h"
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
 #include "paddle/phi/core/enforce.h"
 #include "paddle/phi/core/kernel_registry.h"
 #include "paddle/phi/kernels/mps/mps_utils.h"
@@ -43,17 +45,17 @@ void LogitKernelImpl(const MPSContext& dev_ctx,
     // produce nan/inf.
     MPSGraphTensor* one = [graph constantWithScalar:1.0f
                                               shape:@[@1]
-                                           dataType:MPSDataTypeFloat32];
+                                           dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensor* input_tensor = x_tensor;
     if (eps > 0.0) {
       MPSGraphTensor* eps_tensor =
           [graph constantWithScalar:static_cast<float>(eps)
                               shape:@[@1]
-                           dataType:MPSDataTypeFloat32];
+                           dataType:backends::mps::GetMPSDataType(x.dtype())];
       MPSGraphTensor* one_minus_eps_tensor =
           [graph constantWithScalar:static_cast<float>(1.0 - eps)
                               shape:@[@1]
-                           dataType:MPSDataTypeFloat32];
+                           dataType:backends::mps::GetMPSDataType(x.dtype())];
       input_tensor = [graph clampWithTensor:x_tensor
                              minValueTensor:eps_tensor
                              maxValueTensor:one_minus_eps_tensor
@@ -87,7 +89,7 @@ void LogitKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
 
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     if (x_buffer == nil) {
@@ -104,7 +106,7 @@ void LogitKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
@@ -150,10 +152,22 @@ void LogitKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(logit,
                    MPS,
                    ALL_LAYOUT,
                    phi::LogitKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(logit,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::LogitKernel,
+                   float,
+                   phi::dtype::float16) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS

@@ -16,6 +16,11 @@ limitations under the License. */
 
 #include "paddle/phi/kernels/scale_kernel.h"
 
+#include <type_traits>
+
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
+
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
@@ -41,14 +46,32 @@ void ScaleKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensor* x_tensor = backends::mps::CreateMPSGraphTensorWithShape(
         graph, x, "x");
 
+    // Resolve the scale/bias scalars to the kernel element type *before*
+    // handing them to MPSGraph, matching the CPU EigenScale functor
+    // (scale.to<T>() / bias.to<T>()) and the GPU ScaleFunctor (scale.to<MT>()
+    // where MT == T for integer T). For integer T this casts the scalar to the
+    // integer type first (e.g. 2.5 -> 2) so the constant is an exact integer,
+    // rather than feeding a fractional value into an integer-typed constant and
+    // relying on MPSGraph's implicit float->int rounding behaviour. For
+    // floating T we keep full double precision.
+    double scale_value;
+    double bias_value;
+    if (std::is_integral<T>::value) {
+      scale_value = static_cast<double>(scale.to<T>());
+      bias_value = static_cast<double>(bias.to<T>());
+    } else {
+      scale_value = scale.to<double>();
+      bias_value = bias.to<double>();
+    }
+
     MPSGraphTensor* scale_tensor =
-        [graph constantWithScalar:static_cast<float>(scale.to<float>())
+        [graph constantWithScalar:scale_value
                             shape:@[@1]
-                         dataType:MPSDataTypeFloat32];
+                         dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensor* bias_tensor =
-        [graph constantWithScalar:static_cast<float>(bias.to<float>())
+        [graph constantWithScalar:bias_value
                             shape:@[@1]
-                         dataType:MPSDataTypeFloat32];
+                         dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     MPSGraphTensor* result_tensor = nil;
     if (bias_after_scale) {
@@ -88,7 +111,7 @@ void ScaleKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
 
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     if (x_buffer == nil) {
@@ -105,7 +128,7 @@ void ScaleKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
@@ -153,10 +176,32 @@ void ScaleKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(scale,
                    MPS,
                    ALL_LAYOUT,
                    phi::ScaleKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   uint8_t,
+                   int8_t,
+                   int16_t,
+                   int32_t,
+                   int64_t,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(scale,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::ScaleKernel,
+                   float,
+                   phi::dtype::float16,
+                   uint8_t,
+                   int8_t,
+                   int16_t,
+                   int32_t,
+                   int64_t) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS

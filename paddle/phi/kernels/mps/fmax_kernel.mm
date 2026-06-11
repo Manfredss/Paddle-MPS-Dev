@@ -19,10 +19,10 @@ limitations under the License. */
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
-#include <type_traits>
-
 #include "glog/logging.h"
 #include "paddle/phi/backends/mps/mps_context.h"
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
 #include "paddle/phi/core/enforce.h"
 #include "paddle/phi/core/kernel_registry.h"
 #include "paddle/phi/kernels/mps/mps_utils.h"
@@ -34,11 +34,6 @@ void FMaxKernelImpl(const MPSContext& dev_ctx,
                     const DenseTensor& x,
                     const DenseTensor& y,
                     DenseTensor* out) {
-  // The MPSGraphTensorData objects below hardcode MPSDataTypeFloat32, so this
-  // kernel must only be instantiated for float. Revisit if more types are
-  // ever registered.
-  static_assert(std::is_same<T, float>::value,
-                "FMaxKernelImpl only supports float (MPSDataTypeFloat32).");
   @autoreleasepool {
     MPSGraph* graph = backends::mps::GetMPSGraph(dev_ctx);
 
@@ -51,24 +46,35 @@ void FMaxKernelImpl(const MPSContext& dev_ctx,
     // other operand is returned; only if both are NaN is NaN returned.
     //   tmp    = isnan(y) ? x : max(x, y)
     //   result = isnan(x) ? y : tmp
-    MPSGraphTensor* x_is_nan = [graph isNaNWithTensor:x_tensor
-                                                 name:@"fmax_x_is_nan"];
-    MPSGraphTensor* y_is_nan = [graph isNaNWithTensor:y_tensor
-                                                 name:@"fmax_y_is_nan"];
-    MPSGraphTensor* max_tensor =
-        [graph maximumWithPrimaryTensor:x_tensor
-                        secondaryTensor:y_tensor
-                                   name:@"fmax_max"];
-    MPSGraphTensor* y_nan_fixed =
-        [graph selectWithPredicateTensor:y_is_nan
-                     truePredicateTensor:x_tensor
-                    falsePredicateTensor:max_tensor
-                                    name:@"fmax_y_nan_fixed"];
-    MPSGraphTensor* result_tensor =
-        [graph selectWithPredicateTensor:x_is_nan
-                     truePredicateTensor:y_tensor
-                    falsePredicateTensor:y_nan_fixed
-                                    name:@"fmax_result"];
+    // Integer tensors cannot carry NaN, and isNaNWithTensor is invalid on
+    // them, so the integer path is a plain elementwise maximum.
+    const bool is_int =
+        (x.dtype() == DataType::INT32 || x.dtype() == DataType::INT64);
+    MPSGraphTensor* result_tensor = nil;
+    if (is_int) {
+      result_tensor = [graph maximumWithPrimaryTensor:x_tensor
+                                      secondaryTensor:y_tensor
+                                                 name:@"fmax_result"];
+    } else {
+      MPSGraphTensor* x_is_nan = [graph isNaNWithTensor:x_tensor
+                                                   name:@"fmax_x_is_nan"];
+      MPSGraphTensor* y_is_nan = [graph isNaNWithTensor:y_tensor
+                                                   name:@"fmax_y_is_nan"];
+      MPSGraphTensor* max_tensor =
+          [graph maximumWithPrimaryTensor:x_tensor
+                          secondaryTensor:y_tensor
+                                     name:@"fmax_max"];
+      MPSGraphTensor* y_nan_fixed =
+          [graph selectWithPredicateTensor:y_is_nan
+                       truePredicateTensor:x_tensor
+                      falsePredicateTensor:max_tensor
+                                      name:@"fmax_y_nan_fixed"];
+      result_tensor =
+          [graph selectWithPredicateTensor:x_is_nan
+                       truePredicateTensor:y_tensor
+                      falsePredicateTensor:y_nan_fixed
+                                      name:@"fmax_result"];
+    }
 
     dev_ctx.template Alloc<T>(out);
 
@@ -87,7 +93,7 @@ void FMaxKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
 
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     id<MTLBuffer> y_buffer = backends::mps::GetMTLBuffer(y);
@@ -110,11 +116,11 @@ void FMaxKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensorData* y_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:y_buffer
                     shape:y_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(y.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data,
@@ -160,10 +166,26 @@ void FMaxKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(fmax,
                    MPS,
                    ALL_LAYOUT,
                    phi::FMaxKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   int,
+                   int64_t,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(fmax,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::FMaxKernel,
+                   float,
+                   phi::dtype::float16,
+                   int,
+                   int64_t) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS

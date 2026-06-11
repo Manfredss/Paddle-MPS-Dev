@@ -16,6 +16,9 @@ limitations under the License. */
 
 #include "paddle/phi/kernels/clip_kernel.h"
 
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
+
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
@@ -41,13 +44,13 @@ void ClipKernelImpl(const MPSContext& dev_ctx,
         graph, x, "x");
 
     MPSGraphTensor* min_tensor =
-        [graph constantWithScalar:static_cast<float>(min.to<float>())
+        [graph constantWithScalar:min.to<double>()
                             shape:@[@1]
-                         dataType:MPSDataTypeFloat32];
+                         dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensor* max_tensor =
-        [graph constantWithScalar:static_cast<float>(max.to<float>())
+        [graph constantWithScalar:max.to<double>()
                             shape:@[@1]
-                         dataType:MPSDataTypeFloat32];
+                         dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     // clip(x) = clamp(x, min, max)
     MPSGraphTensor* result_tensor =
@@ -73,7 +76,7 @@ void ClipKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
 
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     if (x_buffer == nil) {
@@ -90,7 +93,7 @@ void ClipKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
@@ -137,10 +140,26 @@ void ClipKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(clip,
                    MPS,
                    ALL_LAYOUT,
                    phi::ClipKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   int32_t,
+                   int64_t,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(clip,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::ClipKernel,
+                   float,
+                   phi::dtype::float16,
+                   int32_t,
+                   int64_t) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS

@@ -24,6 +24,8 @@ limitations under the License. */
 #include "paddle/phi/backends/mps/mps_context.h"
 #include "paddle/phi/core/enforce.h"
 #include "paddle/phi/core/kernel_registry.h"
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
 #include "paddle/phi/kernels/mps/mps_utils.h"
 
 namespace phi {
@@ -41,10 +43,10 @@ void GeluKernelImpl(const MPSContext& dev_ctx,
 
     MPSGraphTensor* half = [graph constantWithScalar:0.5f
                                                 shape:@[@1]
-                                             dataType:MPSDataTypeFloat32];
+                                             dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensor* one = [graph constantWithScalar:1.0f
                                                shape:@[@1]
-                                            dataType:MPSDataTypeFloat32];
+                                            dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     MPSGraphTensor* result_tensor = nil;
     if (approximate) {
@@ -53,10 +55,10 @@ void GeluKernelImpl(const MPSContext& dev_ctx,
       const float kKappa = 0.044715f;
       MPSGraphTensor* beta = [graph constantWithScalar:kBeta
                                                   shape:@[@1]
-                                               dataType:MPSDataTypeFloat32];
+                                               dataType:backends::mps::GetMPSDataType(x.dtype())];
       MPSGraphTensor* kappa = [graph constantWithScalar:kKappa
                                                    shape:@[@1]
-                                                dataType:MPSDataTypeFloat32];
+                                                dataType:backends::mps::GetMPSDataType(x.dtype())];
 
       MPSGraphTensor* x_sq = [graph multiplicationWithPrimaryTensor:x_tensor
                                                      secondaryTensor:x_tensor
@@ -88,7 +90,7 @@ void GeluKernelImpl(const MPSContext& dev_ctx,
       const float kInvSqrt2 = static_cast<float>(M_SQRT1_2);
       MPSGraphTensor* inv_sqrt2 = [graph constantWithScalar:kInvSqrt2
                                                        shape:@[@1]
-                                                    dataType:MPSDataTypeFloat32];
+                                                    dataType:backends::mps::GetMPSDataType(x.dtype())];
       MPSGraphTensor* scaled = [graph multiplicationWithPrimaryTensor:x_tensor
                                                        secondaryTensor:inv_sqrt2
                                                                   name:@"gelu_scaled"];
@@ -121,7 +123,7 @@ void GeluKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
 
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     if (x_buffer == nil) {
@@ -138,7 +140,7 @@ void GeluKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
@@ -184,10 +186,22 @@ void GeluKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(gelu,
                    MPS,
                    ALL_LAYOUT,
                    phi::GeluKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(gelu,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::GeluKernel,
+                   float,
+                   phi::dtype::float16) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS

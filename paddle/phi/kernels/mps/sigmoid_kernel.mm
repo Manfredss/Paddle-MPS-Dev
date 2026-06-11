@@ -23,6 +23,8 @@ limitations under the License. */
 #include "paddle/phi/backends/mps/mps_context.h"
 #include "paddle/phi/core/enforce.h"
 #include "paddle/phi/core/kernel_registry.h"
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
 #include "paddle/phi/kernels/mps/mps_utils.h"
 
 namespace phi {
@@ -33,10 +35,10 @@ void SigmoidKernelImpl(const MPSContext& dev_ctx,
                        DenseTensor* out) {
   @autoreleasepool {
     MPSGraph* graph = backends::mps::GetMPSGraph(dev_ctx);
-    
+
     MPSGraphTensor* x_tensor = backends::mps::CreateMPSGraphTensorWithShape(
         graph, x, "x");
-    
+
     // Perform sigmoid using MPSGraph: sigmoid(x) = 1 / (1 + exp(-x))
     MPSGraphTensor* neg_x = [graph negativeWithTensor:x_tensor
                                                   name:@"neg_x"];
@@ -44,61 +46,61 @@ void SigmoidKernelImpl(const MPSContext& dev_ctx,
                                                       name:@"exp_neg_x"];
     MPSGraphTensor* one = [graph constantWithScalar:1.0f
                                                shape:@[@1]
-                                            dataType:MPSDataTypeFloat32];
+                                            dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensor* one_plus_exp = [graph additionWithPrimaryTensor:one
                                                      secondaryTensor:exp_neg_x
                                                                 name:@"one_plus_exp"];
     MPSGraphTensor* result_tensor = [graph divisionWithPrimaryTensor:one
                                                       secondaryTensor:one_plus_exp
                                                                  name:@"sigmoid_result"];
-    
+
     dev_ctx.template Alloc<T>(out);
-    
+
     id<MTLBuffer> out_buffer = backends::mps::GetMTLBuffer(*out);
     if (out_buffer == nil) {
       VLOG(3) << "MPS buffer not available, using CPU fallback for sigmoid";
       return;
     }
-    
+
     auto out_dims = out->dims();
     NSMutableArray<NSNumber*>* out_shape = [NSMutableArray arrayWithCapacity:out_dims.size()];
     for (int i = 0; i < out_dims.size(); ++i) {
       [out_shape addObject:@(out_dims[i])];
     }
-    
+
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
-    
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
+
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     if (x_buffer == nil) {
       VLOG(3) << "Input buffer not available, using CPU fallback for sigmoid";
       return;
     }
-    
+
     auto x_dims = x.dims();
     NSMutableArray<NSNumber*>* x_shape = [NSMutableArray arrayWithCapacity:x_dims.size()];
     for (int i = 0; i < x_dims.size(); ++i) {
       [x_shape addObject:@(x_dims[i])];
     }
-    
+
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
-    
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
+
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
     };
-    
+
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
       result_tensor: out_data
     };
-    
+
     id<MTLDevice> device = (__bridge id<MTLDevice>)dev_ctx.device();
     id<MTLCommandQueue> commandQueue = [device newCommandQueue];
-    
+
     if (@available(macOS 12.0, *)) {
       [graph runWithMTLCommandQueue:commandQueue
                               feeds:feeds
@@ -119,7 +121,7 @@ void SigmoidKernel(const Context& dev_ctx,
     dev_ctx.template Alloc<T>(out);
     return;
   }
-  
+
   const auto* mps_ctx = dynamic_cast<const MPSContext*>(&dev_ctx);
   if (mps_ctx != nullptr) {
     SigmoidKernelImpl<T>(*mps_ctx, x, out);
@@ -131,11 +133,22 @@ void SigmoidKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(sigmoid,
                    MPS,
                    ALL_LAYOUT,
                    phi::SigmoidKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(sigmoid,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::SigmoidKernel,
+                   float,
+                   phi::dtype::float16) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS
-

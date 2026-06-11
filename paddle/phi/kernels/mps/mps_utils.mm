@@ -59,9 +59,9 @@ MPSGraphTensor* CreateMPSGraphTensor(MPSGraph* graph,
     // Create MPSGraphTensor from buffer
     NSString* ns_name = [NSString stringWithUTF8String:name.c_str()];
     MPSGraphTensor* tensor_node = [graph placeholderWithShape:shape
-                                                         dataType:MPSDataTypeFloat32
+                                                         dataType:GetMPSDataType(tensor.dtype())
                                                            name:ns_name];
-    
+
     return tensor_node;
   }
 }
@@ -78,9 +78,9 @@ MPSGraphTensor* CreateMPSGraphTensorWithShape(MPSGraph* graph,
 
     NSString* ns_name = [NSString stringWithUTF8String:name.c_str()];
     MPSGraphTensor* tensor_node = [graph placeholderWithShape:shape
-                                                         dataType:MPSDataTypeFloat32
+                                                         dataType:GetMPSDataType(tensor.dtype())
                                                            name:ns_name];
-    
+
     return tensor_node;
   }
 }
@@ -124,7 +124,7 @@ id<MTLBuffer> GetMTLBuffer(const DenseTensor& tensor) {
     if (device == nil) {
       return nil;
     }
-    
+
     // Create buffer with existing memory (no-copy)
     // This works for unified memory architecture
     NSUInteger length = allocation->size();
@@ -142,6 +142,8 @@ MPSDataType GetMPSDataType(DataType dtype) {
       return MPSDataTypeFloat32;
     case DataType::FLOAT16:
       return MPSDataTypeFloat16;
+    case DataType::INT64:
+      return MPSDataTypeInt64;
     case DataType::INT32:
       return MPSDataTypeInt32;
     case DataType::INT16:
@@ -154,6 +156,21 @@ MPSDataType GetMPSDataType(DataType dtype) {
       return MPSDataTypeUInt16;
     case DataType::UINT8:
       return MPSDataTypeUInt8;
+    case DataType::BOOL:
+      return MPSDataTypeBool;
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
+    // bfloat16 and complex<float> map to MPSGraph data types that were only
+    // added to the MetalPerformanceShadersGraph SDK in macOS 14. They are
+    // gated by the same SDK check used for their kernel registrations so the
+    // mapping and the registered dtypes stay in lockstep; at runtime these
+    // require macOS 14+. phi::complex64 is an interleaved {float, float} pair,
+    // matching MPSDataTypeComplexFloat32's memory layout.
+    case DataType::BFLOAT16:
+      return MPSDataTypeBFloat16;
+    case DataType::COMPLEX64:
+      return MPSDataTypeComplexFloat32;
+#endif
     default:
       // Default to float32 for unsupported types
       return MPSDataTypeFloat32;
@@ -165,4 +182,3 @@ MPSDataType GetMPSDataType(DataType dtype) {
 }  // namespace phi
 
 #endif  // PADDLE_WITH_MPS
-
