@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import builtins
 import functools
 import inspect
 import math
@@ -29,6 +30,7 @@ from paddle.tensor import fill_constant
 from paddle.utils.decorator_utils import (
     ParamAliasDecorator,
     VariableArgsDecorator,
+    _calc_end_from_shapes,
     expand_decorator,
     fill_diagonal_inplace_decorator,
     index_add_decorator,
@@ -36,6 +38,7 @@ from paddle.utils.decorator_utils import (
     param_one_alias,
     param_two_alias,
     reshape_decorator,
+    slice_scatter_decorator,
     tile_decorator,
     variadic_tensor_decorator,
     view_decorator,
@@ -51,7 +54,7 @@ from ..base.data_feeder import (
 from ..base.framework import Variable, default_main_program
 from ..framework import (
     LayerHelper,
-    convert_np_dtype_to_dtype_,
+    convert_nptype_to_datatype_or_vartype,
     core,
     dygraph_only,
     in_dynamic_mode,
@@ -251,7 +254,7 @@ def cast(x: Tensor, dtype: DTypeLike) -> Tensor:
             >>> y = paddle.cast(x, 'uint8')
     """
     if not isinstance(dtype, (core.VarDesc.VarType, core.DataType)):
-        dtype = convert_np_dtype_to_dtype_(dtype)
+        dtype = convert_nptype_to_datatype_or_vartype(dtype)
     if in_dynamic_or_pir_mode():
         return _C_ops.cast(x, dtype)
     else:
@@ -314,7 +317,7 @@ def cast_(x: Tensor, dtype: DTypeLike) -> Tensor:
     """
     if in_dynamic_mode():
         if not isinstance(dtype, (core.VarDesc.VarType, core.DataType)):
-            dtype = convert_np_dtype_to_dtype_(dtype)
+            dtype = convert_nptype_to_datatype_or_vartype(dtype)
         return _C_ops.cast_(x, dtype)
 
 
@@ -3638,7 +3641,7 @@ def unique_consecutive(
     if not isinstance(
         attr_dtype, (core.VarDesc.VarType, paddle.pir.core.DataType)
     ):
-        attr_dtype = convert_np_dtype_to_dtype_(dtype)
+        attr_dtype = convert_nptype_to_datatype_or_vartype(dtype)
 
     if in_dynamic_mode():
         if math.prod(x.shape) == 0:
@@ -3906,7 +3909,7 @@ def unique(
         axis = []
     else:
         axis = [axis]
-    attr_dtype = convert_np_dtype_to_dtype_(dtype)
+    attr_dtype = convert_nptype_to_datatype_or_vartype(dtype)
     if in_dynamic_mode():
         if math.prod(x.shape) == 0:
             outs = [x.clone()]
@@ -5653,6 +5656,31 @@ def reshape(x: Tensor, shape: ShapeLike, name: str | None = None) -> Tensor:
         return out
 
 
+def reshape_as(x: Tensor, other: Tensor, name: str | None = None) -> Tensor:
+    r"""
+    Reshape the Tensor ``x`` to the same shape as ``other``.
+
+    Args:
+        x (Tensor): The input Tensor.
+        other (Tensor): The Tensor whose shape will be used.
+        name (str|None, optional): Name for the operation. Default: None.
+
+    Returns:
+        Tensor: A Tensor with the same shape as ``other``.
+
+    Examples:
+        .. code-block:: pycon
+
+            >>> import paddle
+            >>> x = paddle.arange(24, dtype='float32')
+            >>> other = paddle.zeros([2, 3, 4])
+            >>> out = x.reshape_as(other)
+            >>> print(out.shape)
+            paddle.Size([2, 3, 4])
+    """
+    return reshape(x, other.shape, name=name)
+
+
 def masked_scatter(
     x: Tensor, mask: Tensor, value: Tensor, name: str | None = None
 ) -> Tensor:
@@ -6433,10 +6461,12 @@ def strided_slice(
         return out
 
 
+@ParamAliasDecorator({"x": ["a"], "y": ["b"], "axes": ["dims"]})
 def tensordot(
     x: Tensor,
     y: Tensor,
     axes: int | NestedSequence[int] | Tensor = 2,
+    out: Tensor | None = None,
     name: str | None = None,
 ) -> Tensor:
     r"""
@@ -6444,8 +6474,11 @@ def tensordot(
 
     Args:
         x (Tensor): The left tensor for contraction with data type ``float16`` or ``float32`` or ``float64``.
+            Alias: ``a``.
         y (Tensor): The right tensor for contraction with the same data type as ``x``.
+            Alias: ``b``.
         axes (int|tuple|list|Tensor, optional):  The axes to contract for ``x`` and ``y``, defaulted to integer ``2``.
+            Alias: ``dims``.
 
             1. It could be a non-negative integer ``n``,
                in which the function will sum over the last ``n`` axes of ``x`` and the first ``n`` axes of ``y`` in order.
@@ -6461,6 +6494,7 @@ def tensordot(
             4. It could be a tensor, in which the ``axes`` tensor will be translated to a python list
                and applied the same rules described above to determine the contraction axes.
                Note that the ``axes`` with Tensor type is ONLY available in Dygraph mode.
+        out (Tensor|None, optional): The output tensor. Default: None.
         name(str|None, optional): The default value is None.  Normally there is no need for user to set this property.
                              For more information, please refer to :ref:`api_guide_Name` .
 
@@ -6662,8 +6696,11 @@ def tensordot(
     y = y.transpose(perm=perm_y).reshape(
         [contraction_size, not_contraction_size_y]
     )
-    out = x.matmul(y).reshape(shape_out)
-    return out
+    result = x.matmul(y).reshape(shape_out)
+    if out is not None:
+        paddle.assign(result, out)
+        return out
+    return result
 
 
 def as_complex(x: Tensor, name: str | None = None) -> Tensor:
@@ -6956,6 +6993,7 @@ def repeat_interleave(
     return out
 
 
+@param_one_alias(["x", "input"])
 def moveaxis(
     x: Tensor,
     source: int | Sequence[int],
@@ -6969,6 +7007,7 @@ def moveaxis(
 
     Args:
         x (Tensor): The input Tensor. It is a N-D Tensor of data types bool, int32, int64, float32, float64, complex64, complex128.
+            Alias: ``input``.
         source(int|tuple|list): ``source`` position of axis that will be moved. Each element must be unique and integer.
         destination(int|tuple|list): ``destination`` position of axis that has been moved. Each element must be unique and integer.
         name(str|None, optional): The default value is None.  Normally there is no need for user to set this
@@ -7900,6 +7939,91 @@ def index_add_(
     return _C_ops.index_add_(x, index, scaled_value, axis)
 
 
+@inplace_apis_in_dygraph_only
+def index_copy_(
+    x: Tensor,
+    dim: int,
+    index: Tensor,
+    source: Tensor,
+) -> Tensor:
+    """
+    Copies the elements of source tensor into the input tensor by selecting the indices in the order given in index.
+    """
+    if x.ndim == 0:
+        if dim not in (-1, 0):
+            raise IndexError(
+                f"Dimension out of range (expected to be in range of [-1, 0], but got {dim})"
+            )
+        dim = 0
+    else:
+        dim = non_negative_axis(x, dim)
+    if index.ndim >= 2:
+        raise IndexError("index_copy_(): index must be 0D or 1D")
+    if convert_dtype(index.dtype) != 'int64':
+        raise RuntimeError("index_copy_(): index must be int64")
+    if x.dtype != source.dtype:
+        raise RuntimeError(
+            "index_copy_(): self and source must have same dtype"
+        )
+    num_indices = index.numel().item()
+    if num_indices != 0:
+        dim_size = x.shape[dim] if x.ndim > 0 else 1
+        if ((index < 0) | (index >= dim_size)).any():
+            raise IndexError("index_copy_(): index out of bounds")
+
+    source_is_scalar = source.ndim == 0
+    if source_is_scalar:
+        if num_indices != 1:
+            raise IndexError("index_copy_(): scalar source requires one index")
+    elif source.ndim != x.ndim and x.ndim != 0:
+        raise IndexError("index_copy_(): source and self must have same rank")
+    elif num_indices != source.shape[dim]:
+        raise IndexError(
+            "index_copy_(): index length must match source size at dim"
+        )
+
+    if x.ndim == 0:
+        if num_indices == 0:
+            return x
+        if source_is_scalar:
+            source = source.reshape([1])
+        if x.place.is_xpu_place():
+            x.reshape_([1]).scatter_(index.reshape([num_indices]), source)
+            return x.reshape_([])
+        x.reshape_([1])[index.reshape([num_indices])] = source
+        return x.reshape_([])
+
+    x_sliced_shape = list(x.shape[:dim]) + list(x.shape[dim + 1 :])
+    source_sliced_shape = (
+        []
+        if source_is_scalar
+        else list(source.shape[:dim]) + list(source.shape[dim + 1 :])
+    )
+    if x_sliced_shape != source_sliced_shape:
+        raise RuntimeError(
+            "index_copy_(): source and destination slices must match"
+        )
+
+    if num_indices == 0:
+        return x
+    if source_is_scalar:
+        source = source.reshape([1])
+    if x.place.is_xpu_place():
+        index_shape = [1] * x.ndim
+        index_shape[dim] = num_indices
+        return put_along_axis_(
+            x,
+            index.reshape(index_shape),
+            source,
+            dim,
+            'assign',
+            include_self=True,
+            broadcast=True,
+        )
+    x[(builtins.slice(None),) * dim + (index,)] = source
+    return x
+
+
 @ParamAliasDecorator({"x": ["input"], "axis": ["dim"], "shape": ["sizes"]})
 def unflatten(
     x: Tensor, axis: int, shape: ShapeLike, name: str | None = None
@@ -8143,7 +8267,9 @@ def view(
         if not isinstance(
             shape_or_dtype, (core.VarDesc.VarType, core.DataType)
         ):
-            shape_or_dtype = convert_np_dtype_to_dtype_(shape_or_dtype)
+            shape_or_dtype = convert_nptype_to_datatype_or_vartype(
+                shape_or_dtype
+            )
         if x.dtype == shape_or_dtype:
             return x
         return _C_ops.view_dtype(x, shape_or_dtype)
@@ -8469,9 +8595,7 @@ def diagonal_scatter(
         "axis": ["dim"],
     }
 )
-def select_scatter(
-    x: Tensor, values: Tensor, axis: int, index: int, name: str | None = None
-) -> Tensor:
+def select_scatter(x: Tensor, values: Tensor, axis: int, index: int) -> Tensor:
     """
     Embeds the values of the values tensor into x at the given index of axis.
 
@@ -8480,7 +8604,6 @@ def select_scatter(
         values (Tensor) : The tensor to embed into x. Supported data types are `bool`, `float16`, `float32`, `float64`, `uint8`, `int8`, `int16`, `int32`, `int64`, `bfloat16`, `complex64`, `complex128`. Alias: ``src``.
         axis (int) : the dimension to insert the slice into. Alias: ``dim``.
         index (int) : the index to select with.
-        name (str|None, optional): Name for the operation (optional, default is None).
 
     Returns:
         Tensor, same dtype and shape with x
@@ -8577,27 +8700,59 @@ def select_scatter(
         return output
 
 
+@overload
 def slice_scatter(
     x: Tensor,
     value: Tensor,
-    axes: Sequence[int],
-    starts: Sequence[int],
-    ends: Sequence[int],
-    strides: Sequence[int],
-    name: str | None = None,
+    axes: Sequence[int] = [0],
+    starts: Sequence[int] = [0],
+    ends: Sequence[int] | None = None,
+    strides: Sequence[int] = [1],
+) -> Tensor: ...
+
+
+@overload
+def slice_scatter(
+    input: Tensor,
+    src: Tensor,
+    dim: int = 0,
+    start: int | None = None,
+    end: int | None = None,
+    step: int = 1,
+) -> Tensor: ...
+
+
+@slice_scatter_decorator()
+def slice_scatter(
+    x: Tensor,
+    value: Tensor,
+    axes: Sequence[int] = [0],
+    starts: Sequence[int] = [0],
+    ends: Sequence[int] | None = None,
+    strides: Sequence[int] = [1],
 ) -> Tensor:
     """
-    Embeds the `value` tensor into `x` along multiple axes. Returns a new tensor instead of a view.
-    The size of `axes` must be equal to `starts` , `ends` and `strides`.
+    Note:
+        This API has two signatures:
+        1. ``paddle.slice_scatter(x, value, axes=[0], starts=[0], ends=None, strides=[1])`` (Paddle-style):
+            Embeds the `value` tensor into `x` along multiple axes. Returns a new tensor instead of a view.
+            The size of `axes` must be equal to `starts`, `ends` and `strides`.
+        2. ``paddle.slice_scatter(input, src, dim=0, start=None, end=None, step=1)`` (PyTorch-style):
+            Embeds the `src` tensor into `input` along a single axis.
 
     Args:
         x (Tensor) : The input Tensor. Supported data types are `bool`, `float16`, `float32`, `float64`, `uint8`, `int8`, `int16`, `int32`, `int64`, `bfloat16`, `complex64`, `complex128`.
+            Alias: ``input``.
         value (Tensor) : The tensor to embed into x. Supported data types are `bool`, `float16`, `float32`, `float64`, `uint8`, `int8`, `int16`, `int32`, `int64`, `bfloat16`, `complex64`, `complex128`.
-        axes (list|tuple) : the dimensions to insert the value.
-        starts (list|tuple) : the start indices of where to insert.
-        ends (list|tuple) : the stop indices of where to insert.
-        strides (list|tuple) : the steps for each insert.
-        name (str|None, optional): Name for the operation (optional, default is None).
+            Alias: ``src``.
+        axes (list|tuple): the dimensions to insert the value. Default: ``[0]``.
+            Alias: ``dim``.
+        starts (list|tuple): the start indices of where to insert. Default: ``[0]``.
+            Alias: ``start``.
+        ends (list|tuple|None): the stop indices of where to insert. Default: ``None``, auto-calculated based on value shape.
+            Alias: ``end``.
+        strides (list|tuple): the steps for each insert. Default: ``[1]``.
+            Alias: ``step``.
 
     Returns:
         Tensor, same dtype and shape with x
@@ -8643,6 +8798,10 @@ def slice_scatter(
               [1., 0., 1., 0., 0.]]])
 
     """
+    # Auto-calculate ends if not provided
+    if ends is None:
+        ends = _calc_end_from_shapes(x, value, axes, starts, strides)
+
     none_axes = []
     decrease_axes = []
     dtype = x.dtype
