@@ -151,7 +151,7 @@ PD_REGISTER_KERNEL(multiply,
                    int,
                    int64_t,
                    phi::dtype::bfloat16,
-                   phi::dtype::complex64) {}
+                   phi::complex64) {}
 #else
 PD_REGISTER_KERNEL(multiply,
                    MPS,
