@@ -16,6 +16,9 @@ limitations under the License. */
 
 #include "paddle/phi/kernels/activation_kernel.h"
 
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
+
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
@@ -135,7 +138,7 @@ namespace phi {
                       const DenseTensor& x,
                       DenseTensor* out) {
         VLOG(3) << "SquareKernel called for MPS, dtype=" << static_cast<int>(x.dtype());
-        
+
         // Handle empty tensor case
         if (x.numel() == 0) {
             dev_ctx.template Alloc<T>(out);
@@ -155,11 +158,26 @@ namespace phi {
 } // namespace phi
 
 // Register the kernel
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(square,
                    MPS,
                    ALL_LAYOUT,
                    phi::SquareKernel,
                    float,
-                   int) {}
+                   phi::dtype::float16,
+                   int,
+                   int64_t,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(square,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::SquareKernel,
+                   float,
+                   phi::dtype::float16,
+                   int,
+                   int64_t) {}
+#endif
 
 #endif // PADDLE_WITH_MPS

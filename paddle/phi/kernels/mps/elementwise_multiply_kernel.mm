@@ -16,6 +16,10 @@ limitations under the License. */
 
 #include "paddle/phi/kernels/elementwise_multiply_kernel.h"
 
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/complex.h"
+#include "paddle/phi/common/float16.h"
+
 #include <Metal/Metal.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
@@ -34,43 +38,43 @@ void MultiplyKernelImpl(const MPSContext& dev_ctx,
                         DenseTensor* out) {
   @autoreleasepool {
     MPSGraph* graph = backends::mps::GetMPSGraph(dev_ctx);
-    
+
     MPSGraphTensor* x_tensor = backends::mps::CreateMPSGraphTensorWithShape(
         graph, x, "x");
     MPSGraphTensor* y_tensor = backends::mps::CreateMPSGraphTensorWithShape(
         graph, y, "y");
-    
+
     MPSGraphTensor* result_tensor = [graph multiplicationWithPrimaryTensor:x_tensor
                                                              secondaryTensor:y_tensor
                                                                         name:@"multiply_result"];
-    
+
     dev_ctx.template Alloc<T>(out);
-    
+
     id<MTLBuffer> out_buffer = backends::mps::GetMTLBuffer(*out);
     if (out_buffer == nil) {
       VLOG(3) << "MPS buffer not available, using CPU fallback for multiply";
       return;
     }
-    
+
     auto out_dims = out->dims();
     NSMutableArray<NSNumber*>* out_shape = [NSMutableArray arrayWithCapacity:out_dims.size()];
     for (int i = 0; i < out_dims.size(); ++i) {
       [out_shape addObject:@(out_dims[i])];
     }
-    
+
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
-    
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
+
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     id<MTLBuffer> y_buffer = backends::mps::GetMTLBuffer(y);
-    
+
     if (x_buffer == nil || y_buffer == nil) {
       VLOG(3) << "Input buffers not available, using CPU fallback for multiply";
       return;
     }
-    
+
     auto x_dims = x.dims();
     auto y_dims = y.dims();
     NSMutableArray<NSNumber*>* x_shape = [NSMutableArray arrayWithCapacity:x_dims.size()];
@@ -81,28 +85,28 @@ void MultiplyKernelImpl(const MPSContext& dev_ctx,
     for (int i = 0; i < y_dims.size(); ++i) {
       [y_shape addObject:@(y_dims[i])];
     }
-    
+
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
     MPSGraphTensorData* y_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:y_buffer
                     shape:y_shape
-                 dataType:MPSDataTypeFloat32];
-    
+                 dataType:backends::mps::GetMPSDataType(y.dtype())];
+
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data,
       y_tensor: y_data
     };
-    
+
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* results = @{
       result_tensor: out_data
     };
-    
+
     id<MTLDevice> device = (__bridge id<MTLDevice>)dev_ctx.device();
     id<MTLCommandQueue> commandQueue = [device newCommandQueue];
-    
+
     if (@available(macOS 12.0, *)) {
       // Use the correct MPSGraph API signature
       [graph runWithMTLCommandQueue:commandQueue
@@ -124,7 +128,7 @@ void MultiplyKernel(const Context& dev_ctx,
     dev_ctx.template Alloc<T>(out);
     return;
   }
-  
+
   const auto* mps_ctx = dynamic_cast<const MPSContext*>(&dev_ctx);
   if (mps_ctx != nullptr) {
     MultiplyKernelImpl<T>(*mps_ctx, x, y, out);
@@ -136,11 +140,27 @@ void MultiplyKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(multiply,
                    MPS,
                    ALL_LAYOUT,
                    phi::MultiplyKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   int,
+                   int64_t,
+                   phi::dtype::bfloat16,
+                   phi::complex64) {}
+#else
+PD_REGISTER_KERNEL(multiply,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::MultiplyKernel,
+                   float,
+                   phi::dtype::float16,
+                   int,
+                   int64_t) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS
-

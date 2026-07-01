@@ -22,6 +22,8 @@ limitations under the License. */
 #include "glog/logging.h"
 #include "paddle/phi/backends/mps/mps_context.h"
 #include "paddle/phi/core/enforce.h"
+#include "paddle/phi/common/bfloat16.h"
+#include "paddle/phi/common/float16.h"
 #include "paddle/phi/core/kernel_registry.h"
 #include "paddle/phi/kernels/mps/mps_utils.h"
 
@@ -47,7 +49,7 @@ void RoundKernelImpl(const MPSContext& dev_ctx,
 
     id<MTLBuffer> out_buffer = backends::mps::GetMTLBuffer(*out);
     if (out_buffer == nil) {
-      VLOG(3) << "MPS buffer not available, using CPU fallback for round";
+      VLOG(3) << "MPS output buffer not available for round; skipping graph run";
       return;
     }
 
@@ -60,11 +62,11 @@ void RoundKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* out_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:out_buffer
                     shape:out_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(out->dtype())];
 
     id<MTLBuffer> x_buffer = backends::mps::GetMTLBuffer(x);
     if (x_buffer == nil) {
-      VLOG(3) << "Input buffer not available, using CPU fallback for round";
+      VLOG(3) << "MPS input buffer not available for round; skipping graph run";
       return;
     }
 
@@ -77,7 +79,7 @@ void RoundKernelImpl(const MPSContext& dev_ctx,
     MPSGraphTensorData* x_data = [[MPSGraphTensorData alloc]
         initWithMTLBuffer:x_buffer
                     shape:x_shape
-                 dataType:MPSDataTypeFloat32];
+                 dataType:backends::mps::GetMPSDataType(x.dtype())];
 
     NSDictionary<MPSGraphTensor*, MPSGraphTensorData*>* feeds = @{
       x_tensor: x_data
@@ -109,7 +111,10 @@ void RoundKernel(const Context& dev_ctx,
                  DenseTensor* out) {
   if (decimals != 0) {
     PADDLE_THROW(common::errors::Unimplemented(
-        "MPS round kernel only supports decimals=0; got decimals=%d.",
+        "MPS round kernel only supports rounding to the nearest integer "
+        "(decimals=0); got decimals=%d. Rounding to a fixed number of "
+        "decimal places is not available via MPSGraph roundWithTensor and "
+        "requires the CPU/GPU backend.",
         decimals));
   }
   if (x.numel() == 0) {
@@ -128,10 +133,22 @@ void RoundKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
+    __MAC_OS_X_VERSION_MAX_ALLOWED >= 140000
 PD_REGISTER_KERNEL(round,
                    MPS,
                    ALL_LAYOUT,
                    phi::RoundKernel,
-                   float) {}
+                   float,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16) {}
+#else
+PD_REGISTER_KERNEL(round,
+                   MPS,
+                   ALL_LAYOUT,
+                   phi::RoundKernel,
+                   float,
+                   phi::dtype::float16) {}
+#endif
 
 #endif  // PADDLE_WITH_MPS
